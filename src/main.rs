@@ -1,3 +1,9 @@
+mod sexp;
+mod parser;
+
+use sexp::*;
+use parser::*;
+
 use std::io::{stdin, Read};
 
 fn main() {
@@ -6,5 +12,7 @@ fn main() {
     stdin().read_to_end(&mut buf).unwrap();
     String::from_utf8(buf).unwrap()
   };
-  print!("{}", content)
+  let output = parse_file(content);
+  print!("{:#?}", output)
 }
+
