@@ -2,6 +2,13 @@
 name = "sexpfmt"
 version = "0.1.0"
 edition = "2021"
+authors = ["Nikhil Idiculla <nikhilidiculla@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+categories = ["command-line-utilities"]
+exclude = ["/.vscode", "/.github"]
+description = "A command-line tool to format S-expressions"
+homepage = "https://github.com/tsnl/sexpfmt"
 
 [dependencies]
 nom = "7.1.1"
