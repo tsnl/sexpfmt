@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SExp {
   List(Vec<SExp>, SExpBookendStyle),
   Atom(String),

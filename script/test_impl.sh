@@ -18,6 +18,40 @@ function print_usage () {
     exit 1
 }
 
+function setup () {
+    local SOUT=$(mktemp)
+    local SERR=$(mktemp)
+
+    cargo build --release 1> "$SOUT" 2> "$SERR"
+    local SETUP_EC=$?
+
+    if [ $SETUP_EC -ne 0 ]; then
+        echo "FAILED"
+        display_output "$SOUT" "$SERR"
+    else
+        echo "OK"
+    fi
+
+    return $SETUP_EC
+}
+
+function unittest () {
+    local SOUT=$(mktemp)
+    local SERR=$(mktemp)
+
+    cargo test --release 1> "$SOUT" 2> "$SERR"
+    local SETUP_EC=$?
+
+    if [ $SETUP_EC -ne 0 ]; then
+        echo "FAILED"
+        display_output "$SOUT" "$SERR"
+    else
+        echo "OK"
+    fi
+
+    return $SETUP_EC
+}
+
 function display_output () {
     local TOUT="$1"
     local TERR="$2"
@@ -151,14 +185,31 @@ elif [ $# -ne 0 ]; then
 fi
 
 echo $DIVIDER0
+echo -n "SETUP... "
+setup
+if [ "$?" -ne 0 ]; then
+  exit 1
+fi
+
+echo $DIVIDER0
+echo -n "UNIT TESTS... "
+unittest
+if [ "$?" -ne 0 ]; then
+  exit 1
+fi
+
+echo $DIVIDER0
 echo "EXPECT TESTS"
 mkdir -p "$ROOT/test/.expect"
 test_file 0 "$ROOT/test/test001-cafe_order_1.sexp"
+test_file 0 "$ROOT/test/test002-multiline_head.sexp"
+test_file 0 "$ROOT/test/test003-various_bookends.sexp"
 
 if [ "$TESTS_GENERATED_COUNT" -ne 0 ]; then
     echo "INFO: $TESTS_GENERATED_COUNT outputs generated."
 fi
 
+echo $DIVIDER0
 if [ "$TESTS_FAIL_COUNT" -ne 0 ]; then
     echo "FAILURE: $TESTS_FAIL_COUNT tests failed"
     exit 1

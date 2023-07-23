@@ -58,43 +58,41 @@ fn atom(input: LocSpan) -> IResult<SExp> {
   map(alt((simple_atom, string_atom)), |x| SExp::Atom(x))(input)
 }
 fn simple_atom(input: LocSpan) -> IResult<String> {
-  map(many1(none_of("\"\n\r\t ();")), |x| x.into_iter().collect())(input)
+  map(many1(none_of("\"\n\r\t ()[]{};")), |x| x.into_iter().collect())(input)
 }
 fn string_atom(input: LocSpan) -> IResult<String> {
   map(
     tuple((char('"'), many0(string_element), char('"'))),
-    |(_, mut content, _)| {
+    |(_, content, _)| {
       let mut chars = Vec::with_capacity(2 + content.len());
       chars.push('"');
-      chars.append(&mut content);
+      for substr in content {
+        for c in substr.into_iter() {
+          if c == '\0' {
+            break;
+          };
+          chars.push(c);
+        };
+      };
       chars.push('"');
       chars.into_iter().collect()
     }
   )(input)
 }
-fn string_element(input: LocSpan) -> IResult<char> {
+fn string_element(input: LocSpan) -> IResult<[char; 2]> {
   alt((
     string_escape_element,
     string_non_escape_element
   ))(input)
 }
-fn string_non_escape_element(input: LocSpan) -> IResult<char> {
-  satisfy(|c| (c != '"' && c != '\n' && c != '\r'))(input)
-}
-fn string_escape_element(input: LocSpan) -> IResult<char> {
+fn string_non_escape_element(input: LocSpan) -> IResult<[char; 2]> {
   map(
-    alt((tag("\\n"), tag("\\r"), tag("\\t"), tag("\\\\"), tag("\\\""))),
-    |t: LocSpan| {
-      match *t.fragment() {
-        "\\n" => '\n',
-        "\\r" => '\r',
-        "\\t" => '\t',
-        "\\\\" => '\\',
-        "\\\"" => '\"',
-        _ => panic!("invalid escape sequence: {}", t),
-      }
-    }
+    satisfy(|c| (c != '"' && c != '\n' && c != '\r')),
+    |c| [c, '\0']
   )(input)
+}
+fn string_escape_element(input: LocSpan) -> IResult<[char; 2]> {
+  map(tag("\\\""), |_| ['\\', '"'])(input)
 }
 
 pub fn nonempty_skip(input: LocSpan) -> IResult<()> {
@@ -116,6 +114,9 @@ fn line_comment<'a>(input: LocSpan<'a>) -> IResult<LocSpan> {
 
 #[cfg(test)]
 mod tests {
+  // FIXME: instead of testing the 'parse_file' function, test individual
+  // parser elements instead.
+
   use super::*;
 
   #[test]
@@ -143,9 +144,27 @@ mod tests {
 
   #[test]
   fn test_parse_atom_3() {
+    let s = r#""this is a string literal\ncomplete with \"escape sequences\"!""#;
+    assert_eq!(parse_file(s.to_string()), vec![SExp::Atom(s.to_string())]);
+  }
+
+  #[test]
+  fn test_parse_atom_4() {
+    let s = r#"#\space"#;
+    assert_eq!(parse_file(s.to_string()), vec![SExp::Atom(s.to_string())]);
+  }
+
+  #[test]
+  fn test_parse_list_1() {
+    let s = r#"(hello world) [hello world] {hello world}"#;
+    let e = vec![SExp::Atom("hello".into()), SExp::Atom("world".into())];
     assert_eq!(
-      parse_file(r#""this is a string literal\ncomplete with \"escape sequences\"!""#.to_string()),
-      vec![SExp::Atom("this is a string literal\ncomplete with \"escape sequences\"!".to_string())]
+      parse_file(s.to_string()),
+      vec![
+        SExp::List(e.clone(), SExpBookendStyle::Parentheses),
+        SExp::List(e.clone(), SExpBookendStyle::SquareBrackets),
+        SExp::List(e.clone(), SExpBookendStyle::CurlyBraces),
+      ]
     );
   }
 }
