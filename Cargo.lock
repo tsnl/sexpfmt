@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sfmt"
+name = "sexpfmt"
 version = "0.1.0"
 dependencies = [
  "nom",

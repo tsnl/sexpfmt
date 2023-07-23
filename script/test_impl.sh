@@ -8,7 +8,7 @@ DIVIDER0=$(python3 -c 'print("=" * 80)')
 DIVIDER1=$(python3 -c 'print("-" * 80)')
 DIVIDER2=$(python3 -c 'print("." * 80)')
 
-SFMT="$ROOT/target/release/sfmt"
+SEXPFMT="$ROOT/target/release/sexpfmt"
 
 function print_usage () {
     echo "USAGE:"
@@ -135,7 +135,7 @@ function test_file () {
 
     echo -n "TEST: '$SHORT_FILE' ... "
 
-    cat "$FILE" | "$SFMT" 1> "$TOUT" 2> "$TERR"
+    cat "$FILE" | "$SEXPFMT" 1> "$TOUT" 2> "$TERR"
     local TEST_EC="${PIPESTATUS[1]}"
     
     if [ $TEST_EC -ne $EXPECT_EC ]; then

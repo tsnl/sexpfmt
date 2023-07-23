@@ -1,10 +1,10 @@
-# `sfmt`
+# `sexpfmt`
 
 S-expressions are easy for machines to write, but generating formatted S-expressions can be painful.
-`sfmt` formats an input stream in a consistent way such that the output is both line-diffable and human-readable.
+`sexpfmt` formats an input stream in a consistent way such that the output is both line-diffable and human-readable.
 
-The formatting style used by sfmt is highly regular, unlike what many Lispers prefer. Each indentation increments spaces
-by a fixed number of spaces (by default, 2).
+The formatting style used by sexpfmt is highly regular, unlike what many Lispers and Schemers prefer. Each indentation 
+increments spaces by a fixed number of spaces (by default, 2).
 
 ```sexp
 (object 
@@ -39,11 +39,11 @@ There is also no support for `#1234 = ...` expressions to construct graphs.
 ## Example Usage
 
 ```bash
-$ cat my-file.sexp | sfmt > my-formatted-file.sexp
-$ ./build/my-sexp-generator-program arg1 arg2 | sfmt >> formatted-logfile.sexp
+$ cat my-file.sexp | sexpfmt > my-formatted-file.sexp
+$ ./build/my-sexp-generator-program arg1 arg2 | sexpfmt >> formatted-logfile.sexp
 ```
 
-For examples of `sfmt`'s behavior, see the `test` directory.
+For examples of `sexpfmt`'s behavior, see the `test` directory.
 
 ---
 
