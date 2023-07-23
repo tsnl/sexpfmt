@@ -2,13 +2,23 @@
 SETUP... OK
 ================================================================================
 UNIT TESTS... OK
+
+running 6 tests
+test parser::tests::test_parse_atom_1 ... ok
+test parser::tests::test_parse_atom_2 ... ok
+test parser::tests::test_parse_atom_3 ... ok
+test parser::tests::test_parse_atom_4 ... ok
+test parser::tests::test_parse_atom_5 ... ok
+test parser::tests::test_parse_list_1 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
 ================================================================================
 EXPECT TESTS
 TEST: 'test001-cafe_order_1.sexp' ... PASS
 TEST: 'test002-multiline_head.sexp' ... PASS
 TEST: 'test003-various_bookends.sexp' ... PASS
 TEST: 'test004-ast1.sexp' ... PASS
-INFO: 2 outputs generated.
 ================================================================================
 SUCCESS: OK
 INFO: Exiting with EC=0

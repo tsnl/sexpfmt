@@ -162,6 +162,13 @@ mod tests {
   }
 
   #[test]
+  fn test_parse_atom_5() {
+    assert_eq!(parse_file("()".into()), vec![SExp::Null(SExpBookendStyle::Parentheses)]);
+    assert_eq!(parse_file("[]".into()), vec![SExp::Null(SExpBookendStyle::SquareBrackets)]);
+    assert_eq!(parse_file("{}".into()), vec![SExp::Null(SExpBookendStyle::CurlyBraces)]);
+  }
+
+  #[test]
   fn test_parse_list_1() {
     let s = r#"(hello world) [hello world] {hello world}"#;
     let e = vec![SExp::Atom("hello".into()), SExp::Atom("world".into())];

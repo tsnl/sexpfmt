@@ -47,6 +47,7 @@ function unittest () {
         display_output "$SOUT" "$SERR"
     else
         echo "OK"
+        cat "$SOUT"
     fi
 
     return $SETUP_EC
