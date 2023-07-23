@@ -112,3 +112,40 @@ fn line_comment<'a>(input: LocSpan<'a>) -> IResult<LocSpan> {
     }
   )(input)
 }
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_parse_atom_1() {
+    assert_eq!(
+      parse_file("; a simple message\nhello world".to_string()), 
+      vec![
+        SExp::Atom("hello".to_string()),
+        SExp::Atom("world".to_string()),
+      ]
+    );
+  }
+
+  #[test]
+  fn test_parse_atom_2() {
+    assert_eq!(
+      parse_file("1234 .567 123.9870".to_string()),
+      vec![
+        SExp::Atom("1234".to_string()),
+        SExp::Atom(".567".to_string()),
+        SExp::Atom("123.9870".to_string()),
+      ]
+    );
+  }
+
+  #[test]
+  fn test_parse_atom_3() {
+    assert_eq!(
+      parse_file(r#""this is a string literal\ncomplete with \"escape sequences\"!""#.to_string()),
+      vec![SExp::Atom("this is a string literal\ncomplete with \"escape sequences\"!".to_string())]
+    );
+  }
+}
