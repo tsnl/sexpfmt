@@ -48,8 +48,8 @@ For examples of `sfmt`'s behavior, see the `test` directory.
 ---
 
 ## TODO
-
 - allow command line options to specify...
+  - whether to print help and exit (e.g. `-h` or `--help`)
   - whether to normalize bookend tokens
   - the margin width and indent width.
 - preserve comments when parsing.
