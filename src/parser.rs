@@ -16,7 +16,6 @@ type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 pub fn parse_file(text: String) -> Vec<SExp> {
   let located_span = LocSpan::new(text.as_str());
   let res = file(located_span).finish().unwrap();
-  println!("rem = '{}'", res.0);
   assert!(res.0.is_empty());
   res.1
 }
