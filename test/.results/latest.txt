@@ -1,0 +1,5 @@
+================================================================================
+EXPECT TESTS
+TEST: 'test001-cafe_order_1.sexp' ... PASS
+SUCCESS: OK
+INFO: Exiting with EC=0
