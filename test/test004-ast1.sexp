@@ -1,0 +1,1 @@
+(file  (bind ($mu-singleton-pattern a ()) () 11) (bind ($mu-singleton-pattern b ()) () a) (bind ($mu-singleton-pattern x ()) () 20) (bind ($mu-singleton-pattern alpha ()) () ($mu-lambda ($mu-unit) ($mu-chain (prefix) (tail ($mu-apply f a b))))))

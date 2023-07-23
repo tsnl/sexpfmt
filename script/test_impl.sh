@@ -204,6 +204,7 @@ mkdir -p "$ROOT/test/.expect"
 test_file 0 "$ROOT/test/test001-cafe_order_1.sexp"
 test_file 0 "$ROOT/test/test002-multiline_head.sexp"
 test_file 0 "$ROOT/test/test003-various_bookends.sexp"
+test_file 0 "$ROOT/test/test004-ast1.sexp"
 
 if [ "$TESTS_GENERATED_COUNT" -ne 0 ]; then
     echo "INFO: $TESTS_GENERATED_COUNT outputs generated."

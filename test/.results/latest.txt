@@ -7,6 +7,7 @@ EXPECT TESTS
 TEST: 'test001-cafe_order_1.sexp' ... PASS
 TEST: 'test002-multiline_head.sexp' ... PASS
 TEST: 'test003-various_bookends.sexp' ... PASS
+TEST: 'test004-ast1.sexp' ... PASS
 INFO: 2 outputs generated.
 ================================================================================
 SUCCESS: OK

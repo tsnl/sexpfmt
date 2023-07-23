@@ -52,7 +52,7 @@ pub fn print_sexp(sexp: SExp) {
 
 fn plan(sexp: &SExp, available_width: i32) -> PrintPlan {
   match sexp {
-    SExp::Null => PrintPlan::Null,
+    SExp::Null(_) => PrintPlan::Null,
     SExp::Atom(v) => {
       // cannot line-break atoms
       PrintPlan::Atom(v.len().try_into().unwrap())
@@ -75,6 +75,16 @@ fn plan(sexp: &SExp, available_width: i32) -> PrintPlan {
 
 fn print_impl(sexp: SExp, plan: PrintPlan, indent: i32) {
   match (sexp, plan) {
+    (SExp::Null(bookend_style), PrintPlan::Null) => {
+      print!(
+        "{}",
+        match bookend_style {
+          SExpBookendStyle::Parentheses => "()",
+          SExpBookendStyle::CurlyBraces => "{}",
+          SExpBookendStyle::SquareBrackets => "[]",
+        }
+      );
+    },
     (SExp::Atom(s), PrintPlan::Atom(_)) => {
       print!("{}", s)
     },

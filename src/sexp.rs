@@ -2,7 +2,7 @@
 pub enum SExp {
   List(Vec<SExp>, SExpBookendStyle),
   Atom(String),
-  Null,
+  Null(SExpBookendStyle),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

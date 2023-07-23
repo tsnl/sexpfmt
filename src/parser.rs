@@ -42,10 +42,17 @@ fn basic_list(lp: char, rp: char, sexp_bookend_style: SExpBookendStyle) -> impl 
   move |input| {
     map(
       tuple((char(lp), opt(sexp_seq), char(rp))),
-      |(_, res, _)| 
+      |(lp, res, _)| 
         match res {
           Some(terms) => SExp::List(terms, sexp_bookend_style),
-          None => SExp::Null,
+          None => SExp::Null(
+            match lp {
+              '(' => SExpBookendStyle::Parentheses,
+              '[' => SExpBookendStyle::SquareBrackets,
+              '{' => SExpBookendStyle::CurlyBraces,
+              _ => panic!("invalid bookend in 'null'")
+            }
+          ),
         }
     )(input)
   }
