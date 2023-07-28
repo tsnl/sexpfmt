@@ -21,7 +21,10 @@ pub fn parse_file(text: String) -> Vec<SExp> {
 }
 
 fn file(input: LocSpan) -> IResult<Vec<SExp>> {
-  sexp_seq(input)
+  map(
+    tuple((many0(sexp_with_opt_prefix_space), opt(nonempty_skip))),
+    |(elems, _)| elems
+  )(input)
 }
 
 fn sexp(input: LocSpan) -> IResult<SExp> {
