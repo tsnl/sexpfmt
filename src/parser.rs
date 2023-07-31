@@ -13,6 +13,13 @@ use nom_locate::LocatedSpan;
 type LocSpan<'a> = LocatedSpan<&'a str>;
 type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 
+fn parse_file(text: String) -> Vec<SExp> {
+  let located_span = LocSpan::new(text.as_str());
+  let res = file(located_span).finish().unwrap();
+  assert!(res.0.is_empty());
+  res.1
+}
+
 pub fn parse_form(text: String) -> SExp {
   let located_span = LocSpan::new(text.as_str());
   let res = sexp(located_span).finish().unwrap();
@@ -128,7 +135,7 @@ mod tests {
   #[test]
   fn test_parse_atom_1() {
     assert_eq!(
-      parse_form("; a simple message\nhello world".to_string()), 
+      parse_file("; a simple message\nhello world".to_string()), 
       vec![
         SExp::Atom("hello".to_string()),
         SExp::Atom("world".to_string()),
@@ -139,7 +146,7 @@ mod tests {
   #[test]
   fn test_parse_atom_2() {
     assert_eq!(
-      parse_form("1234 .567 123.9870".to_string()),
+      parse_file("1234 .567 123.9870".to_string()),
       vec![
         SExp::Atom("1234".to_string()),
         SExp::Atom(".567".to_string()),
@@ -151,20 +158,20 @@ mod tests {
   #[test]
   fn test_parse_atom_3() {
     let s = r#""this is a string literal\ncomplete with \"escape sequences\"!""#;
-    assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
+    assert_eq!(parse_file(s.to_string()), vec![SExp::Atom(s.to_string())]);
   }
 
   #[test]
   fn test_parse_atom_4() {
     let s = r#"#\space"#;
-    assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
+    assert_eq!(parse_file(s.to_string()), vec![SExp::Atom(s.to_string())]);
   }
 
   #[test]
   fn test_parse_atom_5() {
-    assert_eq!(parse_form("()".into()), vec![SExp::Null(SExpBookendStyle::Parentheses)]);
-    assert_eq!(parse_form("[]".into()), vec![SExp::Null(SExpBookendStyle::SquareBrackets)]);
-    assert_eq!(parse_form("{}".into()), vec![SExp::Null(SExpBookendStyle::CurlyBraces)]);
+    assert_eq!(parse_file("()".into()), vec![SExp::Null(SExpBookendStyle::Parentheses)]);
+    assert_eq!(parse_file("[]".into()), vec![SExp::Null(SExpBookendStyle::SquareBrackets)]);
+    assert_eq!(parse_file("{}".into()), vec![SExp::Null(SExpBookendStyle::CurlyBraces)]);
   }
 
   #[test]
@@ -172,7 +179,7 @@ mod tests {
     let s = r#"(hello world) [hello world] {hello world}"#;
     let e = vec![SExp::Atom("hello".into()), SExp::Atom("world".into())];
     assert_eq!(
-      parse_form(s.to_string()),
+      parse_file(s.to_string()),
       vec![
         SExp::List(e.clone(), SExpBookendStyle::Parentheses),
         SExp::List(e.clone(), SExpBookendStyle::SquareBrackets),
