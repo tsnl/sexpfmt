@@ -13,10 +13,16 @@ use nom_locate::LocatedSpan;
 type LocSpan<'a> = LocatedSpan<&'a str>;
 type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 
-pub fn parse_file(text: String) -> Vec<SExp> {
+fn parse_file(text: String) -> Vec<SExp> {
   let located_span = LocSpan::new(text.as_str());
   let res = file(located_span).finish().unwrap();
   assert!(res.0.is_empty());
+  res.1
+}
+
+pub fn parse_form(text: String) -> SExp {
+  let located_span = LocSpan::new(text.as_str());
+  let res = sexp(located_span).finish().unwrap();
   res.1
 }
 
