@@ -14,10 +14,10 @@ type LocSpan<'a> = LocatedSpan<&'a str>;
 type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 
 pub fn parse_form(text: String) -> Vec<SExp> {
-  let located_span = LocSpan::new(text.as_str());
-  let res = file(located_span).finish().unwrap();
-  assert!(res.0.is_empty());
-  res.1
+	let located_span = LocSpan::new(text.as_str());
+	let res = file(located_span).finish().unwrap();
+	assert!(res.0.is_empty(), "res={:#?}", res.0);
+	res.1
 }
 
 fn file(input: LocSpan) -> IResult<Vec<SExp>> {
@@ -156,11 +156,11 @@ mod tests {
 		assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
 	}
 
-  #[test]
-  fn test_parse_atom_4() {
-    let s = r#"#\space"#;
-    assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
-  }
+	#[test]
+	fn test_parse_atom_4() {
+		let s = r#"#\space"#;
+		assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
+	}
 
 	#[test]
 	fn test_parse_atom_5() {
