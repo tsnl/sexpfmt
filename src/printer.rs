@@ -45,9 +45,11 @@ impl PrintPlan {
 	}
 }
 
-pub fn print_sexp(sexp: SExp) {
-	let print_plan = plan(&sexp, MARGIN_WIDTH);
-	print_impl(sexp, print_plan, 0);
+pub fn print_sexp(sexp_vec: Vec<SExp>) {
+	for sexp in sexp_vec.into_iter() {
+		let print_plan = plan(&sexp, MARGIN_WIDTH);
+		print_impl(sexp, print_plan, 0);
+	}
 }
 
 fn plan(sexp: &SExp, available_width: i32) -> PrintPlan {

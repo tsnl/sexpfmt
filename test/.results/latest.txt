@@ -3,15 +3,21 @@ SETUP... OK
 ================================================================================
 UNIT TESTS... OK
 
-running 6 tests
-test parser::tests::test_parse_atom_5 ... ok
-test parser::tests::test_parse_atom_4 ... ok
-test parser::tests::test_parse_atom_3 ... ok
-test parser::tests::test_parse_atom_2 ... ok
+running 12 tests
 test parser::tests::test_parse_atom_1 ... ok
+test parser::tests::test_parse_atom_2 ... ok
+test parser::tests::test_parse_atom_3 ... ok
+test parser::tests::test_parse_atom_4 ... ok
 test parser::tests::test_parse_list_1 ... ok
+test parser::tests::test_parse_atom_5 ... ok
+test reader::tests::test_form_reader_1 ... ok
+test reader::tests::test_form_reader_2 ... ok
+test reader::tests::test_form_reader_3 ... ok
+test reader::tests::test_form_reader_4 ... ok
+test reader::tests::test_form_reader_5 ... ok
+test reader::tests::test_form_reader_6 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 ================================================================================
 EXPECT TESTS
@@ -19,6 +25,7 @@ TEST: 'test001-cafe_order_1.sexp' ... PASS
 TEST: 'test002-multiline_head.sexp' ... PASS
 TEST: 'test003-various_bookends.sexp' ... PASS
 TEST: 'test004-ast1.sexp' ... PASS
+TEST: 'test005-cafe_order_2.sexp' ... PASS
 ================================================================================
 SUCCESS: OK
 INFO: Exiting with EC=0
