@@ -48,12 +48,13 @@ For examples of `sexpfmt`'s behavior, see the `test` directory.
 ---
 
 ## TODO
-- allow command line options to specify...
-  - whether to print help and exit (e.g. `-h` or `--help`)
-  - whether to normalize bookend tokens
-  - the margin width and indent width.
-  - file input, directly map file using OS API to handle very large files.
-- preserve comments when parsing.
-- better error reporting if mis-formatted file is fed as input.
+- [ ] allow command line options to specify...
+  - [ ] whether to print help and exit (e.g. `-h` or `--help`)
+  - [ ] whether to normalize bookend tokens
+  - [ ] the margin width and indent width.
+  - [ ] file input, directly map file using OS API to handle very large files.
+- [ ] preserve comments when parsing.
+- [ ] better error reporting if mis-formatted file is fed as input.
   - e.g. we have almost everything needed to provide line numbers.
-- consider whether to support more features like quote, quasiquote, unquote, pair building, etc.
+- [ ] consider whether to support more features like quote, quasiquote, unquote, pair building, etc.
+  - [ ] explicit support for labels, e.g. `(menu :version "0.1.2" :items (list ...))`
