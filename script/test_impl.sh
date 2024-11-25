@@ -19,8 +19,11 @@ function print_usage () {
 }
 
 function setup () {
-    local SOUT=$(mktemp)
-    local SERR=$(mktemp)
+    local SOUT
+    local SERR
+    
+    SOUT="$(mktemp)"
+    SERR="$(mktemp)"
 
     cargo build --release 1> "$SOUT" 2> "$SERR"
     local SETUP_EC=$?
@@ -36,8 +39,11 @@ function setup () {
 }
 
 function unittest () {
-    local SOUT=$(mktemp)
-    local SERR=$(mktemp)
+    local SOUT
+    local SERR
+
+    SOUT="$(mktemp)"
+    SERR="$(mktemp)"
 
     cargo test --release 1> "$SOUT" 2> "$SERR"
     local SETUP_EC=$?
@@ -75,13 +81,13 @@ function expect_files_equal () {
 
     if [[ -f "$EXPECT" ]]; then 
         # Output already recorded
-        if [ $(diff "$ACTUAL" "$EXPECT" | wc -l) -ne 0 ]; then
+        if [ "$(diff "$ACTUAL" "$EXPECT" | wc -l)" -ne 0 ]; then
             return 1
         fi
     else
         # No output available, hence saving.
-        cp $ACTUAL $EXPECT
-        TESTS_GENERATED_COUNT=$(expr $TESTS_GENERATED_COUNT + 1)
+        cp "$ACTUAL" "$EXPECT"
+        TESTS_GENERATED_COUNT=$(("$TESTS_GENERATED_COUNT" + 1))
     fi
 
     return 0
@@ -101,7 +107,7 @@ function get_expected_file () {
     local FILE="$1"
     local SUFFIX="$2"
 
-    echo "$(dirname -- $FILE)/.expect/$(basename -- $FILE).$SUFFIX"
+    echo "$(dirname -- "$FILE")/.expect/$(basename -- "$FILE").$SUFFIX"
 }
 
 function expect_test_output () {
@@ -110,13 +116,13 @@ function expect_test_output () {
     local TOUT="$3"
     local TERR="$4"
 
-    expect_files_equal "$NAME" "$TOUT" "$(get_expected_file $FILE 'out')"
+    expect_files_equal "$NAME" "$TOUT" "$(get_expected_file "$FILE" 'out')"
     TOUT_OK=$?
     if [ $TOUT_OK -ne 0 ]; then
         return 1
     fi
 
-    expect_files_equal "$NAME" "$TERR" "$(get_expected_file $FILE 'err')"
+    expect_files_equal "$NAME" "$TERR" "$(get_expected_file "$FILE" 'err')"
     TERR_OK=$?
     if [ $TERR_OK -ne 0 ]; then
         return 1
@@ -127,24 +133,28 @@ function expect_test_output () {
 function test_file () {
     local EXPECT_EC=$1
     local FILE=$2
-    local TOUT=$(mktemp)
-    local TERR=$(mktemp)
+    local TOUT
+    local TERR
 
-    local CWD=$(pwd)
-    local SHORT_FILE=$(basename "$FILE")
+    local SHORT_FILE
+    local TEST_EC
+    
+    TOUT="$(mktemp)"
+    TERR="$(mktemp)"
+    SHORT_FILE=$(basename "$FILE")
 
     echo -n "TEST: '$SHORT_FILE' ... "
 
-    cat "$FILE" | "$SEXPFMT" 1> "$TOUT" 2> "$TERR"
-    local TEST_EC="${PIPESTATUS[1]}"
+    "$SEXPFMT" < "$FILE" 1> "$TOUT" 2> "$TERR"
+    TEST_EC="$?"
     
-    if [ $TEST_EC -ne $EXPECT_EC ]; then
+    if [ "$TEST_EC" -ne "$EXPECT_EC" ]; then
         echo "FAIL: invalid EC: expected $EXPECT_EC, got $TEST_EC"
         if [ $VERBOSE -ne 0 ]; then
             display_output "$TOUT" "$TERR"
         fi
-        TESTS_FAIL_COUNT=$(expr $TESTS_FAIL_COUNT + 1)
-        return $TEST_EC
+        TESTS_FAIL_COUNT=$(("$TESTS_FAIL_COUNT" + 1))
+        return "$TEST_EC"
     fi
 
     expect_test_output "$NAME" "$FILE" "$TOUT" "$TERR"
@@ -154,14 +164,14 @@ function test_file () {
         if [ $VERBOSE -ne 0 ]; then
             display_output "$TOUT" "$TERR"
         fi
-        TESTS_FAIL_COUNT=$(expr $TESTS_FAIL_COUNT + 1)
-        return $TEST_EC
+        TESTS_FAIL_COUNT="$(("$TESTS_FAIL_COUNT" + 1))"
+        return "$TEST_EC"
     fi
 
     echo "PASS"
 
-    rm -f $TOUT
-    rm -f $TERR
+    rm -f "$TOUT"
+    rm -f "$TERR"
     
     return 0
 }
@@ -173,7 +183,6 @@ function test_file () {
 if [ $# -eq 1 ]; then
     if [ "$1" = "clean" ]; then
         clean_expects
-        exit $?
     elif [ "$1" = "verbose" ]; then
         VERBOSE=1
     else
@@ -185,33 +194,32 @@ elif [ $# -ne 0 ]; then
     print_usage
 fi
 
-echo $DIVIDER0
+echo "$DIVIDER0"
 echo -n "SETUP... "
-setup
-if [ "$?" -ne 0 ]; then
+if ! setup; then
   exit 1
 fi
 
-echo $DIVIDER0
+echo "$DIVIDER0"
 echo -n "UNIT TESTS... "
-unittest
-if [ "$?" -ne 0 ]; then
+if ! unittest; then
   exit 1
 fi
 
-echo $DIVIDER0
+echo "$DIVIDER0"
 echo "EXPECT TESTS"
 mkdir -p "$ROOT/test/.expect"
 test_file 0 "$ROOT/test/test001-cafe_order_1.sexp"
 test_file 0 "$ROOT/test/test002-multiline_head.sexp"
 test_file 0 "$ROOT/test/test003-various_bookends.sexp"
 test_file 0 "$ROOT/test/test004-ast1.sexp"
+test_file 0 "$ROOT/test/test005-cafe_order_2.sexp"
 
 if [ "$TESTS_GENERATED_COUNT" -ne 0 ]; then
     echo "INFO: $TESTS_GENERATED_COUNT outputs generated."
 fi
 
-echo $DIVIDER0
+echo "$DIVIDER0"
 if [ "$TESTS_FAIL_COUNT" -ne 0 ]; then
     echo "FAILURE: $TESTS_FAIL_COUNT tests failed"
     exit 1
