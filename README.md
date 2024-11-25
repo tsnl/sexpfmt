@@ -58,3 +58,5 @@ For examples of `sexpfmt`'s behavior, see the `test` directory.
   - e.g. we have almost everything needed to provide line numbers.
 - [ ] consider whether to support more features like quote, quasiquote, unquote, pair building, etc.
   - [ ] explicit support for labels, e.g. `(menu :version "0.1.2" :items (list ...))`
+- [ ] better documentation
+- [ ] C API, binaries for easier integration into expect-testing in other languages.
