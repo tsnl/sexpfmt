@@ -6,10 +6,10 @@ UNIT TESTS... OK
 running 12 tests
 test parser::tests::test_parse_atom_1 ... ok
 test parser::tests::test_parse_atom_2 ... ok
-test parser::tests::test_parse_atom_3 ... ok
 test parser::tests::test_parse_atom_4 ... ok
-test parser::tests::test_parse_list_1 ... ok
+test parser::tests::test_parse_atom_3 ... ok
 test parser::tests::test_parse_atom_5 ... ok
+test parser::tests::test_parse_list_1 ... ok
 test reader::tests::test_form_reader_1 ... ok
 test reader::tests::test_form_reader_2 ... ok
 test reader::tests::test_form_reader_3 ... ok
