@@ -1,12 +1,8 @@
 // TODO: rewrite this module: expose a 'CharReader' that accumulates bytes, returns utf-32 chars.
-// This will allow for more robust whitespace recognition and skipping.
+// This will allow for more robust whitespace recognition, skipping, and column counts (grapheme clusters, technically?).
 
-use std::error::Error;
-use std::fmt::Display;
+use super::*;
 use std::io;
-use std::result::Result;
-
-use crate::SExpBookendStyle;
 
 pub struct FormReader<R: io::Read> {
 	inner: ByteReader<R>,
@@ -28,11 +24,12 @@ impl<R: io::Read> FormReader<R> {
 	}
 }
 impl<R: io::Read> FormReader<R> {
-	pub fn get(&mut self) -> Result<Option<String>, FormReaderError> {
+	pub fn get(&mut self) -> Result<Option<(String, Loc)>> {
 		self.skip_whitespace_prefix()?;
-		self.get_without_whitespace_prefix()
+		let position = self.inner.peek_loc();
+		self.get_without_whitespace_prefix(position)
 	}
-	fn skip_whitespace_prefix(&mut self) -> Result<(), FormReaderError> {
+	fn skip_whitespace_prefix(&mut self) -> Result<()> {
 		loop {
 			match self.inner.peek() {
 				Some(b) if Self::is_whitespace_byte(b) => {
@@ -45,16 +42,16 @@ impl<R: io::Read> FormReader<R> {
 			}
 		}
 	}
-	fn get_without_whitespace_prefix(&mut self) -> Result<Option<String>, FormReaderError> {
+	fn get_without_whitespace_prefix(&mut self, position: Loc) -> Result<Option<(String, Loc)>> {
 		match self.inner.peek() {
-			Some(b'(') | Some(b')') => self.get_list_without_whitespace_prefix(),
-			Some(b'[') | Some(b']') => self.get_list_without_whitespace_prefix(),
-			Some(b'{') | Some(b'}') => self.get_list_without_whitespace_prefix(),
-			Some(_) => self.get_atom_without_whitespace_prefix(),
+			Some(b'(') | Some(b')') => self.get_list_without_whitespace_prefix(position),
+			Some(b'[') | Some(b']') => self.get_list_without_whitespace_prefix(position),
+			Some(b'{') | Some(b'}') => self.get_list_without_whitespace_prefix(position),
+			Some(_) => self.get_atom_without_whitespace_prefix(position),
 			None => Ok(None),
 		}
 	}
-	fn get_list_without_whitespace_prefix(&mut self) -> Result<Option<String>, FormReaderError> {
+	fn get_list_without_whitespace_prefix(&mut self, position: Loc) -> Result<Option<(String, Loc)>> {
 		let mut bookend_stack = Vec::default();
 		let mut bytes = Vec::default();
 
@@ -64,21 +61,25 @@ impl<R: io::Read> FormReader<R> {
 					Some(it) => {
 						// Expect TOS
 						if it != $x {
-							return Err(FormReaderError {
-								message: format!("Mismatched bookends: got {:#?}, expected {:#?}", it, $x),
-								cause: None,
-							});
+							return Err(SexpfmtError::mismatched_bookends(position.clone(), it, $x));
 						}
 						// If bookend stack is empty after popping, conclude this form.
 						if bookend_stack.is_empty() {
-							return Ok(Some(String::from_utf8(bytes)?));
+							let string = String::from_utf8(bytes).map_err(|e| {
+								SexpfmtError::form_reader_error(
+									"Invalid UTF-8 in list",
+									Some(position.clone()),
+									Some(Box::new(e)),
+								)
+							})?;
+							return Ok(Some((string, position)));
 						}
 					}
 					None => {
-						return Err(FormReaderError {
-							message: format!("Mismatched bookends: got unexpected opening {:#?}", $x),
-							cause: None,
-						})
+						return Err(SexpfmtError::invalid_input(
+							format!("Unexpected closing bookend {:#?}", $x),
+							position.clone(),
+						));
 					}
 				}
 			};
@@ -87,10 +88,10 @@ impl<R: io::Read> FormReader<R> {
 		macro_rules! handle_eof {
 			() => {
 				if !bookend_stack.is_empty() {
-					return Err(FormReaderError {
-						message: format!("Unexpected EOF: {} un-closed bookends", bookend_stack.len()),
-						cause: None,
-					});
+					return Err(SexpfmtError::unexpected_eof(
+						position.clone(),
+						bookend_stack.len(),
+					));
 				} else {
 					return Ok(None);
 				}
@@ -116,7 +117,7 @@ impl<R: io::Read> FormReader<R> {
 			}
 		}
 	}
-	fn get_atom_without_whitespace_prefix(&mut self) -> Result<Option<String>, FormReaderError> {
+	fn get_atom_without_whitespace_prefix(&mut self, position: Loc) -> Result<Option<(String, Loc)>> {
 		let mut bytes = Vec::default();
 		loop {
 			match self.inner.get()? {
@@ -124,7 +125,14 @@ impl<R: io::Read> FormReader<R> {
 					bytes.push(b);
 				}
 				_ => {
-					return Ok(Some(String::from_utf8(bytes)?));
+					let string = String::from_utf8(bytes).map_err(|e| {
+						SexpfmtError::form_reader_error(
+							"Invalid UTF-8 in atom",
+							Some(position),
+							Some(Box::new(e)),
+						)
+					})?;
+					return Ok(Some((string, position)));
 				}
 			}
 		}
@@ -134,11 +142,16 @@ impl<R: io::Read> FormReader<R> {
 struct ByteReader<R: io::Read> {
 	inner: R,
 	peek: Option<u8>,
+	peek_loc: Loc,
 }
 
 impl<R: io::Read> ByteReader<R> {
 	fn new(inner: R) -> io::Result<Self> {
-		let mut v = Self { inner, peek: None };
+		let mut v = Self {
+			inner,
+			peek: None,
+			peek_loc: Loc::new(0, 1, 1),
+		};
 		assert_eq!(None, v.get()?);
 		Ok(v)
 	}
@@ -148,6 +161,12 @@ impl<R: io::Read> ByteReader<R> {
 		let b = self.get_without_peek()?;
 		let v = self.peek;
 		self.peek = b;
+
+		// Update position tracking for the byte we're returning
+		if let Some(byte) = v {
+			self.peek_loc = Self::next_loc(self.peek_loc, byte);
+		}
+
 		Ok(v)
 	}
 	fn get_without_peek(&mut self) -> io::Result<Option<u8>> {
@@ -163,37 +182,16 @@ impl<R: io::Read> ByteReader<R> {
 	fn peek(&self) -> Option<u8> {
 		self.peek
 	}
-}
+	fn peek_loc(&self) -> Loc {
+		self.peek_loc
+	}
 
-#[derive(Debug)]
-pub struct FormReaderError {
-	message: String,
-	cause: Option<Box<dyn Error>>,
-}
-
-impl Display for FormReaderError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.write_fmt(format_args!("FormReaderError: {}", self.message))
-	}
-}
-impl Error for FormReaderError {
-	fn source(&self) -> Option<&(dyn Error + 'static)> {
-		self.cause.as_deref()
-	}
-}
-impl From<io::Error> for FormReaderError {
-	fn from(value: io::Error) -> Self {
-		FormReaderError {
-			message: String::from("IO error occurred"),
-			cause: Some(Box::new(value)),
-		}
-	}
-}
-impl From<std::string::FromUtf8Error> for FormReaderError {
-	fn from(value: std::string::FromUtf8Error) -> Self {
-		FormReaderError {
-			message: String::from("Invalid UTF-8 input received"),
-			cause: Some(Box::new(value)),
+	fn next_loc(old: Loc, byte: u8) -> Loc {
+		let new_offset = old.offset() + 1;
+		if byte == b'\n' {
+			Loc::new(new_offset, old.line() + 1, 1)
+		} else {
+			Loc::new(new_offset, old.line(), old.column() + 1)
 		}
 	}
 }
@@ -208,7 +206,9 @@ mod tests {
 			let r = StringReader::new($s);
 			let mut r = FormReader::new(r).unwrap();
 			for x in ($v).into_iter() {
-				assert_eq!(r.get().unwrap(), Some(String::from(x)));
+				let result = r.get().unwrap();
+				assert!(result.is_some());
+				assert_eq!(result.unwrap().0, String::from(x));
 			}
 			assert_eq!(r.get().unwrap(), None);
 		};
@@ -242,5 +242,61 @@ mod tests {
 	#[test]
 	fn test_form_reader_6() {
 		case!("1 2 3", vec!["1", "2", "3"]);
+	}
+
+	#[test]
+	fn test_form_reader_position_tracking() {
+		let input = "hello\n(world\n  foo)\nbar";
+		let r = StringReader::new(input);
+		let mut r = FormReader::new(r).unwrap();
+
+		// First form: "hello" at line 1, column 1
+		let result = r.get().unwrap().unwrap();
+		assert_eq!(result.0, "hello");
+		assert_eq!(result.1.line(), 1);
+		assert_eq!(result.1.column(), 1);
+		assert_eq!(result.1.offset(), 0);
+
+		// Second form: "(world\n  foo)" at line 2, column 1
+		let result = r.get().unwrap().unwrap();
+		assert_eq!(result.0, "(world\n  foo)");
+		assert_eq!(result.1.line(), 2);
+		assert_eq!(result.1.column(), 1);
+		assert_eq!(result.1.offset(), 6);
+
+		// Third form: "bar" at line 4, column 1
+		let result = r.get().unwrap().unwrap();
+		assert_eq!(result.0, "bar");
+		assert_eq!(result.1.line(), 4);
+		assert_eq!(result.1.column(), 1);
+		assert_eq!(result.1.offset(), 20);
+
+		// EOF
+		assert_eq!(r.get().unwrap(), None);
+	}
+
+	#[test]
+	fn test_form_reader_atom_ending_position() {
+		// Test atom ending with whitespace vs EOF
+		let input = "atom1 atom2";
+		let r = StringReader::new(input);
+		let mut r = FormReader::new(r).unwrap();
+
+		// First atom: "atom1" at line 1, column 1
+		let result = r.get().unwrap().unwrap();
+		assert_eq!(result.0, "atom1");
+		assert_eq!(result.1.line(), 1);
+		assert_eq!(result.1.column(), 1);
+		assert_eq!(result.1.offset(), 0);
+
+		// Second atom: "atom2" at line 1, column 7 (after "atom1 ")
+		let result = r.get().unwrap().unwrap();
+		assert_eq!(result.0, "atom2");
+		assert_eq!(result.1.line(), 1);
+		assert_eq!(result.1.column(), 7);
+		assert_eq!(result.1.offset(), 6);
+
+		// EOF
+		assert_eq!(r.get().unwrap(), None);
 	}
 }
