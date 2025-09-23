@@ -13,54 +13,27 @@ use nom_locate::LocatedSpan;
 type LocSpan<'a> = LocatedSpan<&'a str>;
 type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 
-pub fn parse_form(text: String, form_position: Loc) -> Result<Vec<SExp>> {
+pub fn parse_form(text: String, start_of_form_loc: Loc) -> Result<Vec<SExp>> {
 	let located_span = LocSpan::new(text.as_str());
 	let res = file(located_span).finish().map_err(|e| {
-		// Convert nom error to our error type with position information
-		let span = e.input;
-		// Calculate position within the form based on nom's position
-		let offset_in_form = span.location_offset();
-		let line_in_form = span.location_line() as usize;
-		let column_in_form = span.get_column();
-
-		// Adjust position to be relative to the original input
-		let error_position = Loc::new(
-			form_position.offset() + offset_in_form,
-			form_position.line() + line_in_form - 1,
-			if line_in_form == 1 {
-				form_position.column() + column_in_form - 1
-			} else {
-				column_in_form
-			},
-		);
-
-		SexpfmtError::parse_error(format!("Parse error: {:?}", e.code), error_position, None)
+		SexpfmtError::parse_error(
+			format!("Parse error: {:?}", e.code),
+			Loc::in_form(start_of_form_loc, e.input),
+			None,
+		)
 	})?;
 
-	if !res.0.is_empty() {
-		let remaining_span = res.0;
-		let offset_in_form = remaining_span.location_offset();
-		let line_in_form = remaining_span.location_line() as usize;
-		let column_in_form = remaining_span.get_column();
-
-		let error_position = Loc::new(
-			form_position.offset() + offset_in_form,
-			form_position.line() + line_in_form - 1,
-			if line_in_form == 1 {
-				form_position.column() + column_in_form - 1
-			} else {
-				column_in_form
-			},
-		);
-
+	let (remaining_span, form_vec) = res;
+	if !remaining_span.is_empty() {
+		let remaining_span_loc = Loc::in_form(start_of_form_loc, remaining_span);
 		return Err(SexpfmtError::parse_error(
 			format!("Unexpected input: '{}'", remaining_span.fragment()),
-			error_position,
+			remaining_span_loc,
 			None,
 		));
 	}
 
-	Ok(res.1)
+	Ok(form_vec)
 }
 
 fn file(input: LocSpan) -> IResult<Vec<SExp>> {

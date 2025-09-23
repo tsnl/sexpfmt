@@ -137,4 +137,22 @@ impl Loc {
 	pub fn column(self) -> usize {
 		self.column
 	}
+
+	pub fn in_form(start_of_form_loc: Self, span: nom_locate::LocatedSpan<&str>) -> Self {
+		// Calculate position within the form based on nom's position
+		let offset_in_form = span.location_offset();
+		let line_in_form = span.location_line() as usize;
+		let column_in_form = span.get_column();
+
+		// Adjust position to be relative to the original input
+		Self {
+			offset: start_of_form_loc.offset() + offset_in_form,
+			line: start_of_form_loc.line() + line_in_form - 1,
+			column: if line_in_form == 1 {
+				start_of_form_loc.column() + column_in_form - 1
+			} else {
+				column_in_form
+			},
+		}
+	}
 }
