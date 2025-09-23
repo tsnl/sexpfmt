@@ -1,4 +1,4 @@
-name: Rust
+name: CI checks
 
 on:
   push:
@@ -10,12 +10,18 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
       - name: Build
         run: cargo build --verbose --release
       - name: Run all tests
         run: ./script/test.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Clippy
+        run: cargo clippy
