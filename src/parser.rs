@@ -69,7 +69,7 @@ fn sexp_seq(input: LocSpan) -> IResult<Vec<SExp>> {
 }
 
 fn atom(input: LocSpan) -> IResult<SExp> {
-	map(alt((simple_atom, string_atom)), |x| SExp::Atom(x))(input)
+	map(alt((simple_atom, string_atom)), SExp::Atom)(input)
 }
 fn simple_atom(input: LocSpan) -> IResult<String> {
 	map(many1(none_of("\"\n\r\t ()[]{};")), |x| {
@@ -110,7 +110,7 @@ fn string_escape_element(input: LocSpan) -> IResult<[char; 2]> {
 pub fn nonempty_skip(input: LocSpan) -> IResult<()> {
 	map(many1(alt((multispace1, line_comment))), |_| ())(input)
 }
-fn line_comment<'a>(input: LocSpan<'a>) -> IResult<LocSpan> {
+fn line_comment(input: LocSpan) -> IResult<LocSpan> {
 	map(
 		tuple((char(';'), take_till(|c| c == '\n' || c == '\r'))),
 		|pair: (char, LocSpan)| {

@@ -12,18 +12,11 @@ use sexp::*;
 
 fn main_inner() -> std::result::Result<(), Box<dyn std::error::Error>> {
 	let mut reader = FormReader::new(std::io::stdin())?;
-	loop {
-		match reader.get()? {
-			Some(s) => {
-				let output = parse_form(s);
-				print_sexp(output);
-				println!();
-				std::io::stdout().flush()?;
-			}
-			None => {
-				break;
-			}
-		}
+	while let Some(s) = reader.get()? {
+		let output = parse_form(s);
+		print_sexp(output);
+		println!();
+		std::io::stdout().flush()?;
 	}
 	Ok(())
 }

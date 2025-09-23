@@ -22,7 +22,7 @@
 
 use super::*;
 
-const NULL_TEXT: &'static str = "()";
+const NULL_TEXT: &str = "()";
 const INDENT_WIDTH: i32 = 2;
 const MARGIN_WIDTH: i32 = 80;
 
@@ -126,7 +126,7 @@ fn print_impl(sexp: SExp, plan: PrintPlan, indent: i32) {
 					for (i, (e, pp)) in (0..es.len()).zip(es.into_iter().zip(es_pps.into_iter())) {
 						print_impl(e, pp, indent + INDENT_WIDTH);
 						if i < es_len - 1 {
-							print!("\n");
+							println!();
 							for _ in 0..(indent + INDENT_WIDTH) {
 								print!(" ");
 							}

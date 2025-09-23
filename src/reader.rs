@@ -161,7 +161,7 @@ impl<R: io::Read> ByteReader<R> {
 		}
 	}
 	fn peek(&self) -> Option<u8> {
-		self.peek.clone()
+		self.peek
 	}
 }
 
