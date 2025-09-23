@@ -21,7 +21,7 @@ function print_usage () {
 function setup () {
     local SOUT
     local SERR
-    
+
     SOUT="$(mktemp)"
     SERR="$(mktemp)"
 
@@ -62,15 +62,15 @@ function unittest () {
 function display_output () {
     local TOUT="$1"
     local TERR="$2"
-    
+
     echo "$DIVIDER1"
     echo "... STDOUT:"
     cat "$TOUT"
-    echo 
+    echo
     echo "$DIVIDER2"
     echo "... STDERR:"
     cat "$TERR"
-    echo 
+    echo
     echo "$DIVIDER1"
 }
 
@@ -79,7 +79,7 @@ function expect_files_equal () {
     local ACTUAL="$2"
     local EXPECT="$3"
 
-    if [[ -f "$EXPECT" ]]; then 
+    if [[ -f "$EXPECT" ]]; then
         # Output already recorded
         if [ "$(diff "$ACTUAL" "$EXPECT" | wc -l)" -ne 0 ]; then
             return 1
@@ -138,7 +138,7 @@ function test_file () {
 
     local SHORT_FILE
     local TEST_EC
-    
+
     TOUT="$(mktemp)"
     TERR="$(mktemp)"
     SHORT_FILE=$(basename "$FILE")
@@ -147,7 +147,7 @@ function test_file () {
 
     "$SEXPFMT" < "$FILE" 1> "$TOUT" 2> "$TERR"
     TEST_EC="$?"
-    
+
     if [ "$TEST_EC" -ne "$EXPECT_EC" ]; then
         echo "FAIL: invalid EC: expected $EXPECT_EC, got $TEST_EC"
         if [ $VERBOSE -ne 0 ]; then
@@ -172,7 +172,7 @@ function test_file () {
 
     rm -f "$TOUT"
     rm -f "$TERR"
-    
+
     return 0
 }
 
@@ -214,6 +214,8 @@ test_file 0 "$ROOT/test/test002-multiline_head.sexp"
 test_file 0 "$ROOT/test/test003-various_bookends.sexp"
 test_file 0 "$ROOT/test/test004-ast1.sexp"
 test_file 0 "$ROOT/test/test005-cafe_order_2.sexp"
+test_file 1 "$ROOT/test/test006-error_1.sexp"
+test_file 1 "$ROOT/test/test006-error_2.sexp"
 
 if [ "$TESTS_GENERATED_COUNT" -ne 0 ]; then
     echo "INFO: $TESTS_GENERATED_COUNT outputs generated."
@@ -223,7 +225,7 @@ echo "$DIVIDER0"
 if [ "$TESTS_FAIL_COUNT" -ne 0 ]; then
     echo "FAILURE: $TESTS_FAIL_COUNT tests failed"
     exit 1
-else 
+else
     echo "SUCCESS: OK"
     exit 0
 fi

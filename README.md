@@ -3,11 +3,11 @@
 S-expressions are easy for machines to write, but generating formatted S-expressions can be painful.
 `sexpfmt` formats an input stream in a consistent way such that the output is both line-diffable and human-readable.
 
-The formatting style used by sexpfmt is highly regular, unlike what many Lispers and Schemers prefer. Each indentation 
+The formatting style used by sexpfmt is highly regular, unlike what many Lispers and Schemers prefer. Each indentation
 increments spaces by a fixed number of spaces (by default, 2).
 
 ```sexp
-(object 
+(object
   (object
     (name "croissant")
     (quantity 2))
@@ -54,8 +54,6 @@ For examples of `sexpfmt`'s behavior, see the `test` directory.
   - [ ] the margin width and indent width.
   - [ ] file input, directly map file using OS API to handle very large files.
 - [ ] preserve comments when parsing.
-- [ ] better error reporting if mis-formatted file is fed as input.
-  - e.g. we have almost everything needed to provide line numbers.
 - [ ] consider whether to support more features like quote, quasiquote, unquote, pair building, etc.
   - [ ] explicit support for labels, e.g. `(menu :version "0.1.2" :items (list ...))`
 - [ ] better documentation

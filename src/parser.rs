@@ -13,11 +13,27 @@ use nom_locate::LocatedSpan;
 type LocSpan<'a> = LocatedSpan<&'a str>;
 type IResult<'a, T> = nom::IResult<LocSpan<'a>, T>;
 
-pub fn parse_form(text: String) -> Vec<SExp> {
+pub fn parse_form(text: String, start_of_form_loc: Loc) -> Result<Vec<SExp>> {
 	let located_span = LocSpan::new(text.as_str());
-	let res = file(located_span).finish().unwrap();
-	assert!(res.0.is_empty(), "res={:#?}", res.0);
-	res.1
+	let res = file(located_span).finish().map_err(|e| {
+		SexpfmtError::parse_error(
+			format!("Parse error: {:?}", e.code),
+			Loc::in_form(start_of_form_loc, e.input),
+			None,
+		)
+	})?;
+
+	let (remaining_span, form_vec) = res;
+	if !remaining_span.is_empty() {
+		let remaining_span_loc = Loc::in_form(start_of_form_loc, remaining_span);
+		return Err(SexpfmtError::parse_error(
+			format!("Unexpected input: '{}'", remaining_span.fragment()),
+			remaining_span_loc,
+			None,
+		));
+	}
+
+	Ok(form_vec)
 }
 
 fn file(input: LocSpan) -> IResult<Vec<SExp>> {
@@ -129,8 +145,9 @@ mod tests {
 
 	#[test]
 	fn test_parse_atom_1() {
+		let position = Loc::new(0, 1, 1);
 		assert_eq!(
-			parse_form("; a simple message\nhello world".to_string()),
+			parse_form("; a simple message\nhello world".to_string(), position).unwrap(),
 			vec![
 				SExp::Atom("hello".to_string()),
 				SExp::Atom("world".to_string()),
@@ -140,8 +157,9 @@ mod tests {
 
 	#[test]
 	fn test_parse_atom_2() {
+		let position = Loc::new(0, 1, 1);
 		assert_eq!(
-			parse_form("1234 .567 123.9870".to_string()),
+			parse_form("1234 .567 123.9870".to_string(), position).unwrap(),
 			vec![
 				SExp::Atom("1234".to_string()),
 				SExp::Atom(".567".to_string()),
@@ -153,27 +171,36 @@ mod tests {
 	#[test]
 	fn test_parse_atom_3() {
 		let s = r#""this is a string literal\ncomplete with \"escape sequences\"!""#;
-		assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
+		let position = Loc::new(0, 1, 1);
+		assert_eq!(
+			parse_form(s.to_string(), position).unwrap(),
+			vec![SExp::Atom(s.to_string())]
+		);
 	}
 
 	#[test]
 	fn test_parse_atom_4() {
 		let s = r#"#\space"#;
-		assert_eq!(parse_form(s.to_string()), vec![SExp::Atom(s.to_string())]);
+		let position = Loc::new(0, 1, 1);
+		assert_eq!(
+			parse_form(s.to_string(), position).unwrap(),
+			vec![SExp::Atom(s.to_string())]
+		);
 	}
 
 	#[test]
 	fn test_parse_atom_5() {
+		let position = Loc::new(0, 1, 1);
 		assert_eq!(
-			parse_form("()".into()),
+			parse_form("()".into(), position.clone()).unwrap(),
 			vec![SExp::Null(SExpBookendStyle::Parentheses)]
 		);
 		assert_eq!(
-			parse_form("[]".into()),
+			parse_form("[]".into(), position.clone()).unwrap(),
 			vec![SExp::Null(SExpBookendStyle::SquareBrackets)]
 		);
 		assert_eq!(
-			parse_form("{}".into()),
+			parse_form("{}".into(), position.clone()).unwrap(),
 			vec![SExp::Null(SExpBookendStyle::CurlyBraces)]
 		);
 	}
@@ -182,13 +209,36 @@ mod tests {
 	fn test_parse_list_1() {
 		let s = r#"(hello world) [hello world] {hello world}"#;
 		let e = vec![SExp::Atom("hello".into()), SExp::Atom("world".into())];
+		let position = Loc::new(0, 1, 1);
 		assert_eq!(
-			parse_form(s.to_string()),
+			parse_form(s.to_string(), position).unwrap(),
 			vec![
 				SExp::List(e.clone(), SExpBookendStyle::Parentheses),
 				SExp::List(e.clone(), SExpBookendStyle::SquareBrackets),
 				SExp::List(e.clone(), SExpBookendStyle::CurlyBraces),
 			]
 		);
+	}
+
+	#[test]
+	fn test_parse_error_with_location() {
+		let position = Loc::new(10, 2, 5);
+
+		// Test invalid syntax that should produce a parse error
+		let result = parse_form("(hello &invalid".to_string(), position);
+		assert!(result.is_err());
+
+		if let Err(SexpfmtError::Parse {
+			message: _,
+			position: error_pos,
+			source: _,
+		}) = result
+		{
+			// Error should be at or near the original position
+			assert!(error_pos.line() >= 2);
+			assert!(error_pos.offset() >= 10);
+		} else {
+			panic!("Expected Parse error, got: {:?}", result);
+		}
 	}
 }
