@@ -115,7 +115,7 @@ fn string_element(input: LocSpan) -> IResult<[char; 2]> {
 	alt((string_escape_element, string_non_escape_element))(input)
 }
 fn string_non_escape_element(input: LocSpan) -> IResult<[char; 2]> {
-	map(satisfy(|c| (c != '"' && c != '\n' && c != '\r')), |c| {
+	map(satisfy(|c| c != '"' && c != '\n' && c != '\r'), |c| {
 		[c, '\0']
 	})(input)
 }
