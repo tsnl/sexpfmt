@@ -1,5 +1,8 @@
 # `sexpfmt`
 
+[![CI checks](https://github.com/tsnl/sexpfmt/actions/workflows/ci.yml/badge.svg)](https://github.com/tsnl/sexpfmt/actions/workflows/ci.yml)
+[![Publish](https://github.com/tsnl/sexpfmt/actions/workflows/publish.yml/badge.svg)](https://github.com/tsnl/sexpfmt/actions/workflows/publish.yml)
+
 S-expressions are easy for machines to write, but generating formatted S-expressions can be painful.
 `sexpfmt` formats an input stream in a consistent way such that the output is both line-diffable and human-readable.
 
