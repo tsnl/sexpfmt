@@ -1,0 +1,66 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to publish from"
+        required: true
+        default: "main"
+        type: string
+      bump_type:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: "Dry run: skip automated commit, push, and publish"
+        required: false
+        default: true
+        type: boolean
+
+# Grant permissions for GITHUB_TOKEN
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  publish:
+    name: Publish Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0
+
+      - name: Publish crate with `tsnl/semver-bump-and-cargo-publish`
+        id: publish
+        uses: tsnl/semver-bump-and-cargo-publish@main
+        with:
+          branch: ${{ github.event.inputs.branch }}
+          bump_type: ${{ github.event.inputs.bump_type }}
+          dry_run: ${{ github.event.inputs.dry_run }}
+          cargo_registry_token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          pat_token: ${{ secrets.PAT_TOKEN }}
+          wait_for_checks: "test; lint"
+          check_wait_interval: "60"
+          check_timeout_count: "20"
+          rust_toolchain: "stable"
+          git_user_email: "nikhilidiculla@gmail.com"
+          git_user_name: "Nikhil Idiculla (via GitHub Actions)"
+
+      - name: Output summary
+        run: |
+          echo "## 📦 Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package**: ${{ steps.publish.outputs.package_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.event.inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.publish.outputs.old_version }} → ${{ steps.publish.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: ${{ steps.publish.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Published to crates.io**: ${{ steps.publish.outputs.published }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry run**: ${{ github.event.inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
