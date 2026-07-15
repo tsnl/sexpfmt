@@ -1,14 +1,19 @@
-ROOT="$(dirname "$0")/../"
+ROOT="$(dirname "$0")/.."
+ROOT="$(realpath "$ROOT")"
 VERBOSE=0
 
 TESTS_FAIL_COUNT=0
 TESTS_GENERATED_COUNT=0
 
-DIVIDER0=$(python3 -c 'print("=" * 80)')
-DIVIDER1=$(python3 -c 'print("-" * 80)')
-DIVIDER2=$(python3 -c 'print("." * 80)')
+DIVIDER0=$(printf '=%.0s' {1..80})
+DIVIDER1=$(printf -- '-%.0s' {1..80})
+DIVIDER2=$(printf '.%.0s' {1..80})
 
 SEXPFMT="$ROOT/target/release/sexpfmt"
+
+# All temporary files live in one directory that is removed on exit.
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 function print_usage () {
     echo "USAGE:"
@@ -19,11 +24,8 @@ function print_usage () {
 }
 
 function setup () {
-    local SOUT
-    local SERR
-
-    SOUT="$(mktemp)"
-    SERR="$(mktemp)"
+    local SOUT="$TMP_DIR/setup.out"
+    local SERR="$TMP_DIR/setup.err"
 
     cargo build --release 1> "$SOUT" 2> "$SERR"
     local SETUP_EC=$?
@@ -39,11 +41,8 @@ function setup () {
 }
 
 function unittest () {
-    local SOUT
-    local SERR
-
-    SOUT="$(mktemp)"
-    SERR="$(mktemp)"
+    local SOUT="$TMP_DIR/unittest.out"
+    local SERR="$TMP_DIR/unittest.err"
 
     cargo test --release 1> "$SOUT" 2> "$SERR"
     local SETUP_EC=$?
@@ -75,13 +74,12 @@ function display_output () {
 }
 
 function expect_files_equal () {
-    local NAME="$1"
-    local ACTUAL="$2"
-    local EXPECT="$3"
+    local ACTUAL="$1"
+    local EXPECT="$2"
 
     if [[ -f "$EXPECT" ]]; then
         # Output already recorded
-        if [ "$(diff "$ACTUAL" "$EXPECT" | wc -l)" -ne 0 ]; then
+        if ! diff -q "$ACTUAL" "$EXPECT" > /dev/null; then
             return 1
         fi
     else
@@ -111,37 +109,34 @@ function get_expected_file () {
 }
 
 function expect_test_output () {
-    local NAME="$1"
-    local FILE="$2"
-    local TOUT="$3"
-    local TERR="$4"
+    local FILE="$1"
+    local TOUT="$2"
+    local TERR="$3"
 
-    expect_files_equal "$NAME" "$TOUT" "$(get_expected_file "$FILE" 'out')"
-    TOUT_OK=$?
-    if [ $TOUT_OK -ne 0 ]; then
+    if ! expect_files_equal "$TOUT" "$(get_expected_file "$FILE" 'out')"; then
         return 1
     fi
-
-    expect_files_equal "$NAME" "$TERR" "$(get_expected_file "$FILE" 'err')"
-    TERR_OK=$?
-    if [ $TERR_OK -ne 0 ]; then
+    if ! expect_files_equal "$TERR" "$(get_expected_file "$FILE" 'err')"; then
         return 1
     fi
     return 0
 }
 
 function test_file () {
-    local EXPECT_EC=$1
-    local FILE=$2
-    local TOUT
-    local TERR
-
+    local FILE="$1"
     local SHORT_FILE
+    local EXPECT_EC
     local TEST_EC
 
-    TOUT="$(mktemp)"
-    TERR="$(mktemp)"
     SHORT_FILE=$(basename "$FILE")
+    local TOUT="$TMP_DIR/$SHORT_FILE.out"
+    local TERR="$TMP_DIR/$SHORT_FILE.err"
+
+    # Tests named `*-error_*` are expected to fail with exit code 1.
+    case "$SHORT_FILE" in
+        *-error_*) EXPECT_EC=1 ;;
+        *) EXPECT_EC=0 ;;
+    esac
 
     echo -n "TEST: '$SHORT_FILE' ... "
 
@@ -154,25 +149,19 @@ function test_file () {
             display_output "$TOUT" "$TERR"
         fi
         TESTS_FAIL_COUNT=$(("$TESTS_FAIL_COUNT" + 1))
-        return "$TEST_EC"
+        return 1
     fi
 
-    expect_test_output "$NAME" "$FILE" "$TOUT" "$TERR"
-    local EXPECT_TEST_EC=$?
-    if [ $EXPECT_TEST_EC -ne 0 ]; then
-        echo "FAIL: expect tests failed."
+    if ! expect_test_output "$FILE" "$TOUT" "$TERR"; then
+        echo "FAIL: output does not match expected output."
         if [ $VERBOSE -ne 0 ]; then
             display_output "$TOUT" "$TERR"
         fi
-        TESTS_FAIL_COUNT="$(("$TESTS_FAIL_COUNT" + 1))"
-        return "$TEST_EC"
+        TESTS_FAIL_COUNT=$(("$TESTS_FAIL_COUNT" + 1))
+        return 1
     fi
 
     echo "PASS"
-
-    rm -f "$TOUT"
-    rm -f "$TERR"
-
     return 0
 }
 
@@ -209,13 +198,9 @@ fi
 echo "$DIVIDER0"
 echo "EXPECT TESTS"
 mkdir -p "$ROOT/test/.expect"
-test_file 0 "$ROOT/test/test001-cafe_order_1.sexp"
-test_file 0 "$ROOT/test/test002-multiline_head.sexp"
-test_file 0 "$ROOT/test/test003-various_bookends.sexp"
-test_file 0 "$ROOT/test/test004-ast1.sexp"
-test_file 0 "$ROOT/test/test005-cafe_order_2.sexp"
-test_file 1 "$ROOT/test/test006-error_1.sexp"
-test_file 1 "$ROOT/test/test006-error_2.sexp"
+for FILE in "$ROOT"/test/*.sexp; do
+    test_file "$FILE"
+done
 
 if [ "$TESTS_GENERATED_COUNT" -ne 0 ]; then
     echo "INFO: $TESTS_GENERATED_COUNT outputs generated."

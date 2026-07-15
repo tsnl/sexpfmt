@@ -11,9 +11,9 @@ description = "A command-line tool to format S-expressions"
 homepage = "https://github.com/tsnl/sexpfmt"
 
 [dependencies]
-nom = "7.1.1"
-nom_locate = "4.1.0"
-thiserror = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+thiserror = "2.0"
+unicode-width = "0.2"
 
 [dev-dependencies]
-stringreader = "0.1.1"
+proptest = "1"
