@@ -2,16 +2,12 @@ use crate::reader::CharReader;
 use crate::{Loc, Result, SExp, SExpBookendStyle, SexpfmtError};
 use std::io;
 
-/// Maximum bookend nesting depth accepted by [`Parser`]. Deeper input is
-/// rejected with a parse error rather than risking a stack overflow further
-/// down the pipeline.
-pub const MAX_DEPTH: usize = 4096;
-
 /// A streaming S-expression parser.
 ///
 /// Reads top-level S-expressions one at a time from any [`io::Read`] (input is
 /// buffered internally), so a long stream can be processed without holding
-/// more than one top-level form in memory.
+/// more than one top-level form in memory. Lists are parsed recursively, with
+/// no artificial nesting-depth limit.
 ///
 /// The surface syntax is a simplified, LISP-like language:
 ///
@@ -28,12 +24,6 @@ pub struct Parser<R: io::Read> {
 	chars: CharReader<R>,
 }
 
-struct OpenList {
-	style: SExpBookendStyle,
-	opened_at: Loc,
-	elems: Vec<SExp>,
-}
-
 impl<R: io::Read> Parser<R> {
 	pub fn new(inner: R) -> Self {
 		Self {
@@ -43,70 +33,67 @@ impl<R: io::Read> Parser<R> {
 
 	/// Parse and return the next top-level S-expression, or `None` at EOF.
 	pub fn next_sexp(&mut self) -> Result<Option<SExp>> {
-		let mut stack: Vec<OpenList> = Vec::new();
+		self.skip_whitespace_and_comments()?;
+		let loc = self.chars.loc();
+		match self.chars.peek()? {
+			None => Ok(None),
+			Some(c) if is_close_bookend(c) => Err(SexpfmtError::parse_error(
+				format!("unexpected closing bookend `{c}`"),
+				loc,
+			)),
+			Some(c) => Ok(Some(self.parse_sexp(c, 1)?)),
+		}
+	}
+
+	/// Parse a single S-expression starting at the peeked character `c`, which
+	/// must not be whitespace, a comment, or a closing bookend. `depth` is the
+	/// number of enclosing lists, including the one this call would open.
+	fn parse_sexp(&mut self, c: char, depth: usize) -> Result<SExp> {
+		match c {
+			c if is_open_bookend(c) => self.parse_list(depth),
+			'"' => self.scan_string_literal_atom(),
+			_ => self.scan_bare_atom(),
+		}
+	}
+
+	/// Parse a list whose opening bookend is the next character.
+	fn parse_list(&mut self, depth: usize) -> Result<SExp> {
+		let opened_at = self.chars.loc();
+		let open = self
+			.chars
+			.next()?
+			.expect("caller peeked an opening bookend");
+		let style = bookend_of_open(open);
+		let mut elems = Vec::new();
 		loop {
-			self.skip_trivia()?;
+			self.skip_whitespace_and_comments()?;
 			let loc = self.chars.loc();
-			let Some(c) = self.chars.peek()? else {
-				return match stack.last() {
-					None => Ok(None),
-					Some(innermost) => Err(SexpfmtError::unexpected_eof(
-						innermost.opened_at,
-						stack.len(),
-					)),
-				};
-			};
-			let completed = match c {
-				'(' | '[' | '{' => {
-					self.chars.next()?;
-					if stack.len() >= MAX_DEPTH {
-						return Err(SexpfmtError::parse_error(
-							format!("bookends nested deeper than {MAX_DEPTH} levels"),
-							loc,
-						));
-					}
-					stack.push(OpenList {
-						style: bookend_of_open(c),
-						opened_at: loc,
-						elems: Vec::new(),
-					});
-					continue;
-				}
-				')' | ']' | '}' => {
+			match self.chars.peek()? {
+				None => return Err(SexpfmtError::unexpected_eof(opened_at, depth)),
+				Some(c) if is_close_bookend(c) => {
 					self.chars.next()?;
 					let got = bookend_of_close(c);
-					let Some(top) = stack.pop() else {
-						return Err(SexpfmtError::parse_error(
-							format!("unexpected closing bookend `{c}`"),
-							loc,
-						));
-					};
-					if top.style != got {
+					if got != style {
 						return Err(SexpfmtError::mismatched_bookends(
-							loc,
-							got,
-							top.style,
-							top.opened_at,
+							loc, got, style, opened_at,
 						));
 					}
-					if top.elems.is_empty() {
-						SExp::Null(top.style)
+					return Ok(if elems.is_empty() {
+						SExp::Null(style)
 					} else {
-						SExp::List(top.elems, top.style)
-					}
+						SExp::List(elems, style)
+					});
 				}
-				'"' => self.scan_string()?,
-				_ => self.scan_bare_atom()?,
-			};
-			match stack.last_mut() {
-				Some(parent) => parent.elems.push(completed),
-				None => return Ok(Some(completed)),
+				Some(c) => {
+					let elem = self.parse_sexp(c, depth + 1)?;
+					elems.push(elem);
+				}
 			}
 		}
 	}
 
 	/// Skip whitespace and `;` line comments.
-	fn skip_trivia(&mut self) -> Result<()> {
+	fn skip_whitespace_and_comments(&mut self) -> Result<()> {
 		loop {
 			match self.chars.peek()? {
 				Some(c) if c.is_whitespace() => {
@@ -138,7 +125,7 @@ impl<R: io::Read> Parser<R> {
 
 	/// Scan a string literal atom, preserving its source text verbatim
 	/// (including the surrounding quotes and all escape sequences).
-	fn scan_string(&mut self) -> Result<SExp> {
+	fn scan_string_literal_atom(&mut self) -> Result<SExp> {
 		let string_start = self.chars.loc();
 		let mut text = String::new();
 		let quote = self.chars.next()?.expect("caller peeked `\"`");
@@ -150,7 +137,7 @@ impl<R: io::Read> Parser<R> {
 			text.push(c);
 			match c {
 				'"' => return Ok(SExp::Atom(text)),
-				'\\' => self.scan_escape(&mut text, string_start)?,
+				'\\' => self.scan_escape_sequence(&mut text, string_start)?,
 				_ => {}
 			}
 		}
@@ -158,7 +145,7 @@ impl<R: io::Read> Parser<R> {
 
 	/// Scan the remainder of an escape sequence; the leading `\` has already
 	/// been consumed and appended to `text`.
-	fn scan_escape(&mut self, text: &mut String, string_start: Loc) -> Result<()> {
+	fn scan_escape_sequence(&mut self, text: &mut String, string_start: Loc) -> Result<()> {
 		let escape_loc = self.chars.loc();
 		let Some(c) = self.chars.next()? else {
 			return Err(unterminated_string(string_start));
@@ -166,7 +153,7 @@ impl<R: io::Read> Parser<R> {
 		text.push(c);
 		match c {
 			'a' | 'b' | 't' | 'n' | 'r' | '"' | '\\' | '|' => Ok(()),
-			'x' => self.scan_hex_escape(text, escape_loc),
+			'x' => self.scan_hex_escape_sequence(text, escape_loc),
 			' ' | '\t' | '\n' | '\r' => self.scan_line_continuation(text, c, escape_loc, string_start),
 			_ => Err(SexpfmtError::parse_error(
 				format!("invalid escape sequence `\\{c}` in string literal"),
@@ -175,9 +162,10 @@ impl<R: io::Read> Parser<R> {
 		}
 	}
 
-	/// Scan the remainder of an inline hex escape `\x<hex scalar value>;`; the
-	/// leading `\x` has already been consumed and appended to `text`.
-	fn scan_hex_escape(&mut self, text: &mut String, escape_loc: Loc) -> Result<()> {
+	/// Scan the remainder of an inline hex escape sequence
+	/// `\x<hex scalar value>;`; the leading `\x` has already been consumed and
+	/// appended to `text`.
+	fn scan_hex_escape_sequence(&mut self, text: &mut String, escape_loc: Loc) -> Result<()> {
 		let mut digits = String::new();
 		loop {
 			let Some(c) = self.chars.next()? else {
@@ -269,7 +257,15 @@ fn unterminated_string(string_start: Loc) -> SexpfmtError {
 }
 
 fn is_atom_terminator(c: char) -> bool {
-	c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '"' | ';')
+	c.is_whitespace() || is_open_bookend(c) || is_close_bookend(c) || matches!(c, '"' | ';')
+}
+
+fn is_open_bookend(c: char) -> bool {
+	matches!(c, '(' | '[' | '{')
+}
+
+fn is_close_bookend(c: char) -> bool {
+	matches!(c, ')' | ']' | '}')
 }
 
 fn bookend_of_open(c: char) -> SExpBookendStyle {
@@ -569,17 +565,6 @@ mod tests {
 				assert_eq!(position, Loc::new(6, 1, 7)); // the `(` before `c`
 			}
 			other => panic!("expected UnexpectedEof, got {other:?}"),
-		}
-	}
-
-	#[test]
-	fn test_depth_limit() {
-		let s = "(".repeat(MAX_DEPTH + 1);
-		match parse_str(&s) {
-			Err(SexpfmtError::Parse { message, .. }) => {
-				assert!(message.contains("nested deeper"), "{message}");
-			}
-			other => panic!("expected parse error, got {other:?}"),
 		}
 	}
 
