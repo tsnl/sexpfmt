@@ -33,7 +33,7 @@ jobs:
     name: Publish Package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.PAT_TOKEN }}
