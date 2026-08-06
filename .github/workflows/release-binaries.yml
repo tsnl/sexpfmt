@@ -1,0 +1,66 @@
+name: Release binaries
+
+# Attach prebuilt `sexpfmt` CLI binaries to a GitHub release, so that other
+# projects (e.g. expect-testing harnesses in other languages) can download and
+# run sexpfmt without a Rust toolchain.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build binaries for"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    env:
+      TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar -C "target/${{ matrix.target }}/release" -czf \
+            "sexpfmt-$TAG-${{ matrix.target }}.tar.gz" sexpfmt
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/sexpfmt.exe" `
+            -DestinationPath "sexpfmt-$env:TAG-${{ matrix.target }}.zip"
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "$TAG" sexpfmt-"$TAG"-${{ matrix.target }}.* \
+            --clobber --repo "${{ github.repository }}"
