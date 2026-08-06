@@ -15,10 +15,6 @@ pub struct PrinterConfig {
 	/// When set, normalize every list's bookends to this style instead of
 	/// preserving each list's input style.
 	pub bookends: Option<SExpBookendStyle>,
-	/// In a multi-line list, keep a `:label` atom on the same line as the
-	/// element that follows it, e.g.
-	/// `(menu\n  :version "0.1.2"\n  :items (list ...))`. Off by default.
-	pub pair_labels: bool,
 }
 
 impl Default for PrinterConfig {
@@ -27,7 +23,6 @@ impl Default for PrinterConfig {
 			indent_width: 2,
 			margin_width: 80,
 			bookends: None,
-			pair_labels: false,
 		}
 	}
 }
@@ -65,18 +60,21 @@ fn is_label_atom(sexp: &SExp) -> bool {
 }
 
 /// Whether element `i` of a multi-line list starts a `:label value` pair that
-/// should share a line. Both the planner and the writer walk elements from
-/// left to right, skipping the paired value, so a value that itself looks like
-/// a label (e.g. the second `:b` in `:a :b`) is never re-paired.
-fn pairs_with_next(es: &[SExp], i: usize, config: &PrinterConfig) -> bool {
-	config.pair_labels
-		&& is_label_atom(&es[i])
-		&& i + 1 < es.len()
-		&& !matches!(es[i + 1], SExp::Comment(_))
+/// shares a line. Both the planner and the writer walk elements from left to
+/// right, skipping the paired value, so a value that itself looks like a
+/// label (e.g. the second `:b` in `:a :b`) is never re-paired. A comment is
+/// never a pair value: it would swallow the rest of the label's line.
+fn pairs_with_next(es: &[SExp], i: usize) -> bool {
+	is_label_atom(&es[i]) && i + 1 < es.len() && !matches!(es[i + 1], SExp::Comment(_))
 }
 
 /// Write `sexp` to `w`, formatted according to `config`, without a trailing
 /// newline.
+///
+/// When a list is broken across lines, elements print one per line, except
+/// that a `:label` atom (a bare atom starting with `:`) always shares its
+/// line with the element that follows it, e.g.
+/// `(menu\n  :version "0.1.2"\n  :items (list ...))`.
 ///
 /// # Panics
 ///
@@ -133,16 +131,16 @@ fn plan(sexp: &SExp, available_width: Option<usize>, config: &PrinterConfig) -> 
 				}
 			}
 			// Multi-line: one element per row, except that a `:label value` pair
-			// shares a row when `config.pair_labels` is set. `available_width` is
-			// always `Some` here unless `must_break` (a parent only plans children
-			// with `None` once it fits on one line, which comments preclude).
+			// shares a row. `available_width` is always `Some` here unless
+			// `must_break` (a parent only plans children with `None` once it
+			// fits on one line, which comments preclude).
 			let available = available_width.unwrap_or(config.margin_width);
 			let child_available = available.saturating_sub(config.indent_width);
 			let mut elem_plans: Vec<PrintPlan> = Vec::with_capacity(es.len());
 			let mut max_row_width = 0;
 			let mut i = 0;
 			while i < es.len() {
-				if pairs_with_next(es, i, config) {
+				if pairs_with_next(es, i) {
 					let label_plan = plan(&es[i], Some(child_available), config);
 					let value_available = child_available.saturating_sub(label_plan.width() + 1);
 					let value_plan = plan(&es[i + 1], Some(value_available), config);
@@ -214,7 +212,7 @@ fn write_impl<W: Write>(
 							write!(w, "{:child_indent$}", "")?;
 						}
 						write_impl(w, &es[i], &es_pps[i], child_indent, config)?;
-						if pairs_with_next(es, i, config) {
+						if pairs_with_next(es, i) {
 							write!(w, " ")?;
 							write_impl(w, &es[i + 1], &es_pps[i + 1], child_indent, config)?;
 							i += 2;
@@ -356,35 +354,25 @@ mod tests {
 		assert_eq!(fmt1_preserving(";\n", &config), ";");
 	}
 
-	fn pair_labels_config(margin_width: usize) -> PrinterConfig {
+	fn margin_config(margin_width: usize) -> PrinterConfig {
 		PrinterConfig {
 			margin_width,
-			pair_labels: true,
 			..Default::default()
 		}
 	}
 
 	#[test]
-	fn test_pair_labels() {
-		let config = pair_labels_config(30);
+	fn test_labels_pair_with_the_following_element() {
+		let config = margin_config(30);
 		assert_eq!(
 			fmt1_with(r#"(menu :version "0.1.2" :items (list a b))"#, &config),
 			"(menu\n  :version \"0.1.2\"\n  :items (list a b))"
 		);
-		// Off by default: one element per line.
-		let config = PrinterConfig {
-			margin_width: 30,
-			..Default::default()
-		};
-		assert_eq!(
-			fmt1_with(r#"(menu :version "0.1.2" :items (list a b))"#, &config),
-			"(menu\n  :version\n  \"0.1.2\"\n  :items\n  (list a b))"
-		);
 	}
 
 	#[test]
-	fn test_pair_labels_pairs_greedily_left_to_right() {
-		let config = pair_labels_config(1);
+	fn test_labels_pair_greedily_left_to_right() {
+		let config = margin_config(1);
 		// `:b` is `:a`'s value, so it must not pair with `:c`.
 		assert_eq!(fmt1_with("(x :a :b :c)", &config), "(x\n  :a :b\n  :c)");
 		// A label with nothing after it stays alone.
@@ -394,8 +382,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_pair_labels_with_multiline_value() {
-		let config = pair_labels_config(16);
+	fn test_label_pairs_with_multiline_value() {
+		let config = margin_config(16);
 		assert_eq!(
 			fmt1_with("(m :items (list aaaa bbbb))", &config),
 			"(m\n  :items (list\n    aaaa\n    bbbb))"
@@ -403,8 +391,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_pair_labels_does_not_pair_comments() {
-		let config = pair_labels_config(1);
+	fn test_labels_do_not_pair_with_comments() {
+		let config = margin_config(1);
 		assert_eq!(
 			fmt1_preserving("(x :a ; note\n b)", &config),
 			"(x\n  :a\n  ; note\n  b)"

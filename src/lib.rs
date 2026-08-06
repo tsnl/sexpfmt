@@ -29,18 +29,12 @@
 //!
 //! For finer control, the pipeline underneath is also public: [`Parser`]
 //! yields [`SExp`] values, and [`write_sexp`] / [`sexp_to_string`] print them.
-//!
-//! A C API for embedding sexpfmt in other languages is available behind the
-//! `capi` feature; see the `capi` module and `include/sexpfmt.h`.
 
 mod error;
 mod parser;
 mod printer;
 mod reader;
 mod sexp;
-
-#[cfg(feature = "capi")]
-pub mod capi;
 
 pub use error::*;
 pub use parser::*;
@@ -56,8 +50,7 @@ use std::io;
 pub struct Config {
 	/// Parsing options (`--preserve-comments`).
 	pub parser: ParserConfig,
-	/// Printing options (`--indent`, `--margin`, `--bookends`,
-	/// `--pair-labels`).
+	/// Printing options (`--indent`, `--margin`, `--bookends`).
 	pub printer: PrinterConfig,
 }
 
@@ -152,10 +145,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_pair_labels_end_to_end() {
+	fn test_label_pairing_end_to_end() {
 		let mut config = Config::default();
 		config.printer.margin_width = 24;
-		config.printer.pair_labels = true;
 		assert_eq!(
 			format_str(r#"(menu :version "0.1.2" :items (list a))"#, &config).unwrap(),
 			"(menu\n  :version \"0.1.2\"\n  :items (list a))\n"

@@ -26,6 +26,13 @@ fn arb_bare_atom() -> impl Strategy<Value = String> {
 	"[A-Za-z0-9._+-]{1,12}"
 }
 
+/// Label atoms (`:` + at least one character): in a multi-line list these
+/// share a line with the element that follows them, so generating them
+/// exercises the label-pairing layout.
+fn arb_label_atom() -> impl Strategy<Value = String> {
+	":[A-Za-z0-9._+-]{1,10}"
+}
+
 /// String literal atoms, as verbatim source text (quotes included), built from
 /// pieces that are each valid string-literal content: safe literal characters,
 /// R7RS escapes, and characters that are special *outside* strings (brackets,
@@ -62,6 +69,7 @@ fn arb_comment() -> impl Strategy<Value = String> {
 fn arb_sexp() -> impl Strategy<Value = SExp> {
 	let leaf = prop_oneof![
 		arb_bare_atom().prop_map(SExp::Atom),
+		arb_label_atom().prop_map(SExp::Atom),
 		arb_string_atom().prop_map(SExp::Atom),
 		arb_comment().prop_map(SExp::Comment),
 		arb_style().prop_map(SExp::Null),
@@ -73,20 +81,13 @@ fn arb_sexp() -> impl Strategy<Value = SExp> {
 }
 
 fn arb_printer_config() -> impl Strategy<Value = PrinterConfig> {
-	(
-		1usize..8,
-		1usize..120,
-		proptest::option::of(arb_style()),
-		any::<bool>(),
+	(1usize..8, 1usize..120, proptest::option::of(arb_style())).prop_map(
+		|(indent_width, margin_width, bookends)| PrinterConfig {
+			indent_width,
+			margin_width,
+			bookends,
+		},
 	)
-		.prop_map(
-			|(indent_width, margin_width, bookends, pair_labels)| PrinterConfig {
-				indent_width,
-				margin_width,
-				bookends,
-				pair_labels,
-			},
-		)
 }
 
 proptest! {

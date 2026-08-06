@@ -33,11 +33,6 @@ struct Cli {
 	/// Preserve `;` line comments instead of discarding them.
 	#[arg(long)]
 	preserve_comments: bool,
-
-	/// In multi-line lists, keep a `:label` atom on the same line as the
-	/// element that follows it.
-	#[arg(long)]
-	pair_labels: bool,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -67,7 +62,6 @@ fn main() -> ExitCode {
 	config.printer.indent_width = cli.indent;
 	config.printer.margin_width = cli.margin;
 	config.printer.bookends = cli.bookends.map(SExpBookendStyle::from);
-	config.printer.pair_labels = cli.pair_labels;
 
 	let stdout = io::stdout().lock();
 	let mut out = io::BufWriter::new(stdout);

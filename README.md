@@ -70,8 +70,6 @@ Options:
                            [possible values: parens, square, curly]
       --preserve-comments  Preserve `;` line comments instead of discarding
                            them
-      --pair-labels        In multi-line lists, keep a `:label` atom on the
-                           same line as the element that follows it
   -h, --help               Print help (see more with '--help')
   -V, --version            Print version
 ```
@@ -84,8 +82,8 @@ $ ./build/my-sexp-generator-program arg1 arg2 | sexpfmt >> formatted-logfile.sex
 $ sexpfmt --indent 4 --margin 100 < my-file.sexp
 ```
 
-With `--pair-labels`, a `:label` atom shares a line with the element that
-follows it when a list is broken across lines:
+When a list is broken across lines, a `:label` atom (a bare atom starting
+with `:`) always shares its line with the element that follows it:
 
 ```sexp
 (menu
@@ -117,35 +115,8 @@ assert_eq!(formatted, "(a b (c))\n");
 Use `sexpfmt::format` to stream from any `io::Read` to any `io::Write`, one
 top-level S-expression at a time, or drive `Parser` / `write_sexp` directly.
 
----
-
-## C API
-
-For integration into expect-testing in other languages, a C API is available
-behind the `capi` cargo feature. Build the library from the repository root:
-
-```bash
-cargo rustc --release --features capi --lib --crate-type cdylib    # shared
-cargo rustc --release --features capi --lib --crate-type staticlib # static
-```
-
-The header lives at [`include/sexpfmt.h`](include/sexpfmt.h):
-
-```c
-#include "sexpfmt.h"
-
-sexpfmt_config config = sexpfmt_config_default();
-char *out = NULL, *error = NULL;
-if (sexpfmt_format(input, input_len, &config, &out, NULL, &error) == SEXPFMT_OK) {
-	fputs(out, stdout);
-} else {
-	fprintf(stderr, "sexpfmt: %s\n", error);
-}
-sexpfmt_str_free(out);
-sexpfmt_str_free(error);
-```
-
-Alternatively, spawn the prebuilt `sexpfmt` binary attached to each
+For integration into expect-testing in other languages, spawn the prebuilt
+`sexpfmt` binary attached to each
 [GitHub release](https://github.com/tsnl/sexpfmt/releases) and pipe through
 its stdin/stdout.
 
@@ -181,8 +152,10 @@ decision can be revisited.
 - [x] preserve comments when parsing (`--preserve-comments`).
 - [x] consider whether to support more features like quote, quasiquote, unquote, pair building, etc.
       (decided against for now; see "Design notes" above)
-  - [x] explicit support for labels, e.g. `(menu :version "0.1.2" :items (list ...))` (`--pair-labels`)
+  - [x] explicit support for labels, e.g. `(menu :version "0.1.2" :items (list ...))`
+        (always on when a list breaks across lines)
 - [x] better documentation
-- [x] C API, binaries for easier integration into expect-testing in other languages.
+- [x] binaries for easier integration into expect-testing in other languages.
+  - [ ] C API for embedding without spawning a process (dropped for now).
 - [ ] attach comments to the element they follow, so `(a ; note` keeps the
       note on `a`'s line instead of its own.
