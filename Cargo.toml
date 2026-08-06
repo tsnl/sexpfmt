@@ -10,8 +10,15 @@ exclude = ["/.vscode", "/.github"]
 description = "A command-line tool to format S-expressions"
 homepage = "https://github.com/tsnl/sexpfmt"
 
+[features]
+# C API for embedding sexpfmt in other languages; see include/sexpfmt.h.
+# Build the C library with e.g.:
+#   cargo rustc --release --features capi --lib --crate-type cdylib
+capi = ["dep:libc"]
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+libc = { version = "0.2", optional = true }
 thiserror = "2.0"
 unicode-width = "0.2"
 

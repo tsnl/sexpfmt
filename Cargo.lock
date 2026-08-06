@@ -359,6 +359,7 @@ name = "sexpfmt"
 version = "2.0.0"
 dependencies = [
  "clap",
+ "libc",
  "proptest",
  "thiserror",
  "unicode-width",
