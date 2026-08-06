@@ -12,7 +12,9 @@ use std::io;
 /// The surface syntax is a simplified, LISP-like language:
 ///
 /// - Lists are delimited by `( )`, `[ ]`, or `{ }`; bookends must match.
-/// - `;` starts a line comment; comments are consumed and discarded.
+/// - `;` starts a line comment. Comments are consumed and discarded by
+///   default, or preserved as [`SExp::Comment`] nodes when
+///   [`ParserConfig::preserve_comments`] is set.
 /// - String literal atoms are delimited by `"` and follow R7RS Scheme escape
 ///   rules: `\a \b \t \n \r \" \\ \|`, inline hex escapes `\x<hex>;`, and
 ///   line continuations (`\` + intraline whitespace + newline). Any other
@@ -22,18 +24,38 @@ use std::io;
 /// - Any other run of non-whitespace, non-delimiter characters is a bare atom.
 pub struct Parser<R: io::Read> {
 	chars: CharReader<R>,
+	config: ParserConfig,
+}
+
+/// Parsing options for [`Parser`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ParserConfig {
+	/// Preserve `;` line comments as [`SExp::Comment`] nodes instead of
+	/// discarding them. Off by default.
+	pub preserve_comments: bool,
 }
 
 impl<R: io::Read> Parser<R> {
+	/// A parser with the default [`ParserConfig`] (comments are discarded).
 	pub fn new(inner: R) -> Self {
+		Self::with_config(inner, ParserConfig::default())
+	}
+
+	pub fn with_config(inner: R, config: ParserConfig) -> Self {
 		Self {
 			chars: CharReader::new(inner),
+			config,
 		}
 	}
 
 	/// Parse and return the next top-level S-expression, or `None` at EOF.
+	///
+	/// When [`ParserConfig::preserve_comments`] is set, a top-level comment is
+	/// returned as its own [`SExp::Comment`].
 	pub fn next_sexp(&mut self) -> Result<Option<SExp>> {
-		self.skip_whitespace_and_comments()?;
+		if let Some(text) = self.skip_to_content()? {
+			return Ok(Some(SExp::Comment(text)));
+		}
 		let loc = self.chars.loc();
 		match self.chars.peek()? {
 			None => Ok(None),
@@ -66,7 +88,10 @@ impl<R: io::Read> Parser<R> {
 		let style = bookend_of_open(open);
 		let mut elems = Vec::new();
 		loop {
-			self.skip_whitespace_and_comments()?;
+			if let Some(text) = self.skip_to_content()? {
+				elems.push(SExp::Comment(text));
+				continue;
+			}
 			let loc = self.chars.loc();
 			match self.chars.peek()? {
 				None => return Err(SexpfmtError::unexpected_eof(opened_at, depth)),
@@ -92,22 +117,44 @@ impl<R: io::Read> Parser<R> {
 		}
 	}
 
-	/// Skip whitespace and `;` line comments.
-	fn skip_whitespace_and_comments(&mut self) -> Result<()> {
+	/// Skip whitespace and `;` line comments until the next token (or EOF).
+	///
+	/// When [`ParserConfig::preserve_comments`] is set, stops at the first
+	/// comment and returns its text instead of discarding it.
+	fn skip_to_content(&mut self) -> Result<Option<String>> {
 		loop {
 			match self.chars.peek()? {
 				Some(c) if c.is_whitespace() => {
 					self.chars.next()?;
 				}
-				Some(';') => loop {
-					match self.chars.next()? {
-						None | Some('\n') => break,
-						Some(_) => {}
+				Some(';') => {
+					let text = self.scan_comment_text()?;
+					if self.config.preserve_comments {
+						return Ok(Some(text));
 					}
-				},
-				_ => return Ok(()),
+				}
+				_ => return Ok(None),
 			}
 		}
+	}
+
+	/// Consume a `;` comment through its terminating newline (or EOF) and
+	/// return the text between them. A trailing `\r` (from a CRLF line ending)
+	/// is not considered part of the text.
+	fn scan_comment_text(&mut self) -> Result<String> {
+		let semicolon = self.chars.next()?;
+		debug_assert_eq!(semicolon, Some(';'));
+		let mut text = String::new();
+		loop {
+			match self.chars.next()? {
+				None | Some('\n') => break,
+				Some(c) => text.push(c),
+			}
+		}
+		if text.ends_with('\r') {
+			text.pop();
+		}
+		Ok(text)
 	}
 
 	fn scan_bare_atom(&mut self) -> Result<SExp> {
@@ -242,9 +289,16 @@ impl<R: io::Read> Parser<R> {
 	}
 }
 
-/// Parse every S-expression in `text`. Convenience wrapper over [`Parser`].
+/// Parse every S-expression in `text` with the default [`ParserConfig`].
+/// Convenience wrapper over [`Parser`].
 pub fn parse_str(text: &str) -> Result<Vec<SExp>> {
-	let mut parser = Parser::new(text.as_bytes());
+	parse_str_with(text, ParserConfig::default())
+}
+
+/// Parse every S-expression in `text` with the given [`ParserConfig`].
+/// Convenience wrapper over [`Parser`].
+pub fn parse_str_with(text: &str, config: ParserConfig) -> Result<Vec<SExp>> {
+	let mut parser = Parser::with_config(text.as_bytes(), config);
 	let mut sexps = Vec::new();
 	while let Some(sexp) = parser.next_sexp()? {
 		sexps.push(sexp);
@@ -382,6 +436,59 @@ mod tests {
 		assert_eq!(parse_str("; hello world\n").unwrap(), vec![]);
 		assert_eq!(parse_str("; hello world").unwrap(), vec![]);
 		assert_eq!(parse_str("; comment\nfoo").unwrap(), vec![atom("foo")]);
+	}
+
+	fn parse_preserving(text: &str) -> Result<Vec<SExp>> {
+		parse_str_with(
+			text,
+			ParserConfig {
+				preserve_comments: true,
+			},
+		)
+	}
+
+	fn comment(s: &str) -> SExp {
+		SExp::Comment(s.to_string())
+	}
+
+	#[test]
+	fn test_preserve_top_level_comments() {
+		assert_eq!(
+			parse_preserving("; hello\n(a) ; trailer").unwrap(),
+			vec![
+				comment(" hello"),
+				SExp::List(vec![atom("a")], SExpBookendStyle::Parentheses),
+				comment(" trailer"),
+			]
+		);
+	}
+
+	#[test]
+	fn test_preserve_comments_inside_lists() {
+		assert_eq!(
+			parse_preserving("(a ; note with ) bracket\n b)").unwrap(),
+			vec![SExp::List(
+				vec![atom("a"), comment(" note with ) bracket"), atom("b")],
+				SExpBookendStyle::Parentheses
+			)]
+		);
+	}
+
+	#[test]
+	fn test_preserved_comment_text_is_verbatim() {
+		// No newline at EOF, empty comment, and CRLF line endings.
+		assert_eq!(parse_preserving(";tail").unwrap(), vec![comment("tail")]);
+		assert_eq!(parse_preserving(";\n").unwrap(), vec![comment("")]);
+		assert_eq!(
+			parse_preserving("; a\r\nb").unwrap(),
+			vec![comment(" a"), atom("b")]
+		);
+	}
+
+	#[test]
+	fn test_preserving_comments_does_not_split_strings() {
+		let s = r#""not a ; comment""#;
+		assert_eq!(parse_preserving(s).unwrap(), vec![atom(s)]);
 	}
 
 	// Regression: brackets inside comments used to break form splitting.

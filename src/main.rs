@@ -1,5 +1,5 @@
 use clap::Parser;
-use sexpfmt::{PrinterConfig, SexpfmtError};
+use sexpfmt::{Config, SExpBookendStyle, SexpfmtError};
 
 use std::fs::File;
 use std::io;
@@ -24,14 +24,50 @@ struct Cli {
 	/// Target maximum line width.
 	#[arg(long, default_value_t = 80)]
 	margin: usize,
+
+	/// Normalize all list bookends to the given style instead of preserving
+	/// each list's input style.
+	#[arg(long, value_enum, value_name = "STYLE")]
+	bookends: Option<Bookends>,
+
+	/// Preserve `;` line comments instead of discarding them.
+	#[arg(long)]
+	preserve_comments: bool,
+
+	/// In multi-line lists, keep a `:label` atom on the same line as the
+	/// element that follows it.
+	#[arg(long)]
+	pair_labels: bool,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Bookends {
+	/// ( )
+	Parens,
+	/// [ ]
+	Square,
+	/// { }
+	Curly,
+}
+
+impl From<Bookends> for SExpBookendStyle {
+	fn from(value: Bookends) -> Self {
+		match value {
+			Bookends::Parens => SExpBookendStyle::Parentheses,
+			Bookends::Square => SExpBookendStyle::SquareBrackets,
+			Bookends::Curly => SExpBookendStyle::CurlyBraces,
+		}
+	}
 }
 
 fn main() -> ExitCode {
 	let cli = Cli::parse();
-	let config = PrinterConfig {
-		indent_width: cli.indent,
-		margin_width: cli.margin,
-	};
+	let mut config = Config::default();
+	config.parser.preserve_comments = cli.preserve_comments;
+	config.printer.indent_width = cli.indent;
+	config.printer.margin_width = cli.margin;
+	config.printer.bookends = cli.bookends.map(SExpBookendStyle::from);
+	config.printer.pair_labels = cli.pair_labels;
 
 	let stdout = io::stdout().lock();
 	let mut out = io::BufWriter::new(stdout);

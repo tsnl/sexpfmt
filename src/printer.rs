@@ -1,4 +1,4 @@
-use crate::SExp;
+use crate::{SExp, SExpBookendStyle};
 use std::io;
 use std::io::Write;
 use unicode_width::UnicodeWidthStr;
@@ -12,6 +12,13 @@ pub struct PrinterConfig {
 	/// on a single line; lists that don't are broken with one element per line.
 	/// Atoms are never broken, so a line can still exceed the margin.
 	pub margin_width: usize,
+	/// When set, normalize every list's bookends to this style instead of
+	/// preserving each list's input style.
+	pub bookends: Option<SExpBookendStyle>,
+	/// In a multi-line list, keep a `:label` atom on the same line as the
+	/// element that follows it, e.g.
+	/// `(menu\n  :version "0.1.2"\n  :items (list ...))`. Off by default.
+	pub pair_labels: bool,
 }
 
 impl Default for PrinterConfig {
@@ -19,6 +26,8 @@ impl Default for PrinterConfig {
 		Self {
 			indent_width: 2,
 			margin_width: 80,
+			bookends: None,
+			pair_labels: false,
 		}
 	}
 }
@@ -29,6 +38,7 @@ const NULL_WIDTH: usize = 2;
 enum PrintPlan {
 	Null,
 	Atom(usize),
+	Comment(usize),
 	List(usize, Vec<PrintPlan>, ListPrintPlan),
 }
 
@@ -42,9 +52,27 @@ impl PrintPlan {
 		match self {
 			PrintPlan::Null => NULL_WIDTH,
 			PrintPlan::Atom(w) => *w,
+			PrintPlan::Comment(w) => *w,
 			PrintPlan::List(w, _, _) => *w,
 		}
 	}
+}
+
+/// Whether `sexp` is a label atom (`:` followed by at least one character),
+/// e.g. `:version`. String literal atoms start with `"`, so they never match.
+fn is_label_atom(sexp: &SExp) -> bool {
+	matches!(sexp, SExp::Atom(text) if text.len() > 1 && text.starts_with(':'))
+}
+
+/// Whether element `i` of a multi-line list starts a `:label value` pair that
+/// should share a line. Both the planner and the writer walk elements from
+/// left to right, skipping the paired value, so a value that itself looks like
+/// a label (e.g. the second `:b` in `:a :b`) is never re-paired.
+fn pairs_with_next(es: &[SExp], i: usize, config: &PrinterConfig) -> bool {
+	config.pair_labels
+		&& is_label_atom(&es[i])
+		&& i + 1 < es.len()
+		&& !matches!(es[i + 1], SExp::Comment(_))
 }
 
 /// Write `sexp` to `w`, formatted according to `config`, without a trailing
@@ -79,36 +107,59 @@ fn plan(sexp: &SExp, available_width: Option<usize>, config: &PrinterConfig) -> 
 	match sexp {
 		SExp::Null(_) => PrintPlan::Null,
 		SExp::Atom(v) => PrintPlan::Atom(atom_width(v)),
+		// `;` plus the comment text (which never contains a newline).
+		SExp::Comment(text) => PrintPlan::Comment(1 + UnicodeWidthStr::width(text.as_str())),
 		SExp::List(es, _) => {
 			assert!(
 				!es.is_empty(),
 				"cannot print an empty SExp::List; the empty list is SExp::Null"
 			);
-			let elem_plans: Vec<PrintPlan> = es.iter().map(|x| plan(x, None, config)).collect();
-			// `(elem elem ... elem)`: two bookends, elements, separating spaces.
-			let monoline_width =
-				2 + elem_plans.iter().map(PrintPlan::width).sum::<usize>() + (es.len() - 1);
-			match available_width {
-				None => PrintPlan::List(monoline_width, elem_plans, ListPrintPlan::Monoline),
-				Some(available) if monoline_width <= available => {
-					PrintPlan::List(monoline_width, elem_plans, ListPrintPlan::Monoline)
-				}
-				Some(available) => {
-					let child_available = available.saturating_sub(config.indent_width);
-					let ml_elem_plans: Vec<PrintPlan> = es
-						.iter()
-						.map(|x| plan(x, Some(child_available), config))
-						.collect();
-					let width = config.indent_width
-						+ ml_elem_plans
-							.iter()
-							.map(PrintPlan::width)
-							.max()
-							.expect("list is non-empty")
-						+ 1;
-					PrintPlan::List(width, ml_elem_plans, ListPrintPlan::Multiline)
+			// A comment consumes the rest of its line, so a list containing one
+			// anywhere can never be printed on a single line.
+			let must_break = es.iter().any(SExp::contains_comment);
+			if !must_break {
+				let elem_plans: Vec<PrintPlan> = es.iter().map(|x| plan(x, None, config)).collect();
+				// `(elem elem ... elem)`: two bookends, elements, separating spaces.
+				let monoline_width =
+					2 + elem_plans.iter().map(PrintPlan::width).sum::<usize>() + (es.len() - 1);
+				match available_width {
+					None => {
+						return PrintPlan::List(monoline_width, elem_plans, ListPrintPlan::Monoline);
+					}
+					Some(available) if monoline_width <= available => {
+						return PrintPlan::List(monoline_width, elem_plans, ListPrintPlan::Monoline);
+					}
+					Some(_) => {}
 				}
 			}
+			// Multi-line: one element per row, except that a `:label value` pair
+			// shares a row when `config.pair_labels` is set. `available_width` is
+			// always `Some` here unless `must_break` (a parent only plans children
+			// with `None` once it fits on one line, which comments preclude).
+			let available = available_width.unwrap_or(config.margin_width);
+			let child_available = available.saturating_sub(config.indent_width);
+			let mut elem_plans: Vec<PrintPlan> = Vec::with_capacity(es.len());
+			let mut max_row_width = 0;
+			let mut i = 0;
+			while i < es.len() {
+				if pairs_with_next(es, i, config) {
+					let label_plan = plan(&es[i], Some(child_available), config);
+					let value_available = child_available.saturating_sub(label_plan.width() + 1);
+					let value_plan = plan(&es[i + 1], Some(value_available), config);
+					let row_width = label_plan.width() + 1 + value_plan.width();
+					max_row_width = max_row_width.max(row_width);
+					elem_plans.push(label_plan);
+					elem_plans.push(value_plan);
+					i += 2;
+				} else {
+					let elem_plan = plan(&es[i], Some(child_available), config);
+					max_row_width = max_row_width.max(elem_plan.width());
+					elem_plans.push(elem_plan);
+					i += 1;
+				}
+			}
+			let width = config.indent_width + max_row_width + 1;
+			PrintPlan::List(width, elem_plans, ListPrintPlan::Multiline)
 		}
 	}
 }
@@ -122,19 +173,17 @@ fn write_impl<W: Write>(
 ) -> io::Result<()> {
 	match (sexp, plan) {
 		(SExp::Null(bookend_style), PrintPlan::Null) => {
-			write!(
-				w,
-				"{}{}",
-				bookend_style.open_char(),
-				bookend_style.close_char()
-			)
+			let style = config.bookends.unwrap_or(*bookend_style);
+			write!(w, "{}{}", style.open_char(), style.close_char())
 		}
 		(SExp::Atom(s), PrintPlan::Atom(_)) => write!(w, "{s}"),
+		(SExp::Comment(text), PrintPlan::Comment(_)) => write!(w, ";{text}"),
 		(SExp::List(es, bookend_style), PrintPlan::List(_, es_pps, linebreak)) => {
 			assert!(
 				!es.is_empty(),
 				"cannot print an empty SExp::List; the empty list is SExp::Null"
 			);
+			let style = config.bookends.unwrap_or(*bookend_style);
 			// When the first element is itself a multi-line list, pad the
 			// bookends with spaces so the head's own bookends stay visually
 			// distinct from ours.
@@ -142,11 +191,12 @@ fn write_impl<W: Write>(
 				es_pps.first(),
 				Some(PrintPlan::List(_, _, ListPrintPlan::Multiline))
 			);
-			write!(w, "{}", bookend_style.open_char())?;
+			write!(w, "{}", style.open_char())?;
 			if insert_padding_space {
 				write!(w, " ")?;
 			}
 			let child_indent = indent + config.indent_width;
+			let mut trailing_comment = false;
 			match linebreak {
 				ListPrintPlan::Monoline => {
 					for (i, (e, pp)) in es.iter().zip(es_pps).enumerate() {
@@ -157,19 +207,33 @@ fn write_impl<W: Write>(
 					}
 				}
 				ListPrintPlan::Multiline => {
-					for (i, (e, pp)) in es.iter().zip(es_pps).enumerate() {
+					let mut i = 0;
+					while i < es.len() {
 						if i > 0 {
 							writeln!(w)?;
 							write!(w, "{:child_indent$}", "")?;
 						}
-						write_impl(w, e, pp, child_indent, config)?;
+						write_impl(w, &es[i], &es_pps[i], child_indent, config)?;
+						if pairs_with_next(es, i, config) {
+							write!(w, " ")?;
+							write_impl(w, &es[i + 1], &es_pps[i + 1], child_indent, config)?;
+							i += 2;
+						} else {
+							i += 1;
+						}
 					}
+					// A trailing comment would swallow a closing bookend on the
+					// same line, so drop the bookend onto its own line.
+					trailing_comment = matches!(es.last(), Some(SExp::Comment(_)));
 				}
 			}
-			if insert_padding_space {
+			if trailing_comment {
+				writeln!(w)?;
+				write!(w, "{:indent$}", "")?;
+			} else if insert_padding_space {
 				write!(w, " ")?;
 			}
-			write!(w, "{}", bookend_style.close_char())
+			write!(w, "{}", style.close_char())
 		}
 		_ => panic!("sexp-plan mismatch"),
 	}
@@ -223,10 +287,127 @@ mod tests {
 		let config = PrinterConfig {
 			indent_width: 4,
 			margin_width: 10,
+			..Default::default()
 		};
 		assert_eq!(
 			fmt1_with("(aaaa bbbb cccc)", &config),
 			"(aaaa\n    bbbb\n    cccc)"
+		);
+	}
+
+	#[test]
+	fn test_normalize_bookends() {
+		let config = PrinterConfig {
+			bookends: Some(SExpBookendStyle::Parentheses),
+			..Default::default()
+		};
+		assert_eq!(fmt1_with("[a {b ()} []]", &config), "(a (b ()) ())");
+		let config = PrinterConfig {
+			bookends: Some(SExpBookendStyle::CurlyBraces),
+			..Default::default()
+		};
+		assert_eq!(fmt1_with("(a [b])", &config), "{a {b}}");
+	}
+
+	fn fmt1_preserving(s: &str, config: &PrinterConfig) -> String {
+		let v = crate::parse_str_with(
+			s,
+			crate::ParserConfig {
+				preserve_comments: true,
+			},
+		)
+		.unwrap();
+		assert_eq!(v.len(), 1, "expected exactly one sexp in {s:?}");
+		sexp_to_string(&v[0], config)
+	}
+
+	#[test]
+	fn test_comment_forces_multiline() {
+		let config = PrinterConfig::default();
+		assert_eq!(
+			fmt1_preserving("(a ; note\n b)", &config),
+			"(a\n  ; note\n  b)"
+		);
+		// Also when the comment is buried in a nested list that would
+		// otherwise fit within the margin.
+		assert_eq!(
+			fmt1_preserving("(a (b ; note\n c) d)", &config),
+			"(a\n  (b\n    ; note\n    c)\n  d)"
+		);
+	}
+
+	#[test]
+	fn test_trailing_comment_pushes_bookend_to_next_line() {
+		let config = PrinterConfig::default();
+		assert_eq!(
+			fmt1_preserving("(a b ; last\n)", &config),
+			"(a\n  b\n  ; last\n)"
+		);
+		assert_eq!(
+			fmt1_preserving("(a (b ; last\n) c)", &config),
+			"(a\n  (b\n    ; last\n  )\n  c)"
+		);
+	}
+
+	#[test]
+	fn test_top_level_comment_prints_verbatim() {
+		let config = PrinterConfig::default();
+		assert_eq!(fmt1_preserving("; hello\n", &config), "; hello");
+		assert_eq!(fmt1_preserving(";\n", &config), ";");
+	}
+
+	fn pair_labels_config(margin_width: usize) -> PrinterConfig {
+		PrinterConfig {
+			margin_width,
+			pair_labels: true,
+			..Default::default()
+		}
+	}
+
+	#[test]
+	fn test_pair_labels() {
+		let config = pair_labels_config(30);
+		assert_eq!(
+			fmt1_with(r#"(menu :version "0.1.2" :items (list a b))"#, &config),
+			"(menu\n  :version \"0.1.2\"\n  :items (list a b))"
+		);
+		// Off by default: one element per line.
+		let config = PrinterConfig {
+			margin_width: 30,
+			..Default::default()
+		};
+		assert_eq!(
+			fmt1_with(r#"(menu :version "0.1.2" :items (list a b))"#, &config),
+			"(menu\n  :version\n  \"0.1.2\"\n  :items\n  (list a b))"
+		);
+	}
+
+	#[test]
+	fn test_pair_labels_pairs_greedily_left_to_right() {
+		let config = pair_labels_config(1);
+		// `:b` is `:a`'s value, so it must not pair with `:c`.
+		assert_eq!(fmt1_with("(x :a :b :c)", &config), "(x\n  :a :b\n  :c)");
+		// A label with nothing after it stays alone.
+		assert_eq!(fmt1_with("(x :a)", &config), "(x\n  :a)");
+		// A bare `:` is not a label.
+		assert_eq!(fmt1_with("(x : y)", &config), "(x\n  :\n  y)");
+	}
+
+	#[test]
+	fn test_pair_labels_with_multiline_value() {
+		let config = pair_labels_config(16);
+		assert_eq!(
+			fmt1_with("(m :items (list aaaa bbbb))", &config),
+			"(m\n  :items (list\n    aaaa\n    bbbb))"
+		);
+	}
+
+	#[test]
+	fn test_pair_labels_does_not_pair_comments() {
+		let config = pair_labels_config(1);
+		assert_eq!(
+			fmt1_preserving("(x :a ; note\n b)", &config),
+			"(x\n  :a\n  ; note\n  b)"
 		);
 	}
 

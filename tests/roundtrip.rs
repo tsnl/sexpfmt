@@ -2,7 +2,15 @@
 //! `SExp` (round-trip), and formatting must be idempotent.
 
 use proptest::prelude::*;
-use sexpfmt::{PrinterConfig, SExp, SExpBookendStyle, parse_str, sexp_to_string};
+use sexpfmt::{
+	ParserConfig, PrinterConfig, SExp, SExpBookendStyle, parse_str_with, sexp_to_string,
+};
+
+/// Parsing config for re-reading printed output: comments must be preserved,
+/// or trees containing [`SExp::Comment`] cannot round-trip.
+const REPARSE: ParserConfig = ParserConfig {
+	preserve_comments: true,
+};
 
 fn arb_style() -> impl Strategy<Value = SExpBookendStyle> {
 	prop_oneof![
@@ -43,10 +51,19 @@ fn arb_string_atom() -> impl Strategy<Value = String> {
 	proptest::collection::vec(piece, 0..6).prop_map(|pieces| format!("\"{}\"", pieces.concat()))
 }
 
+/// Comment text: any printable ASCII (comments swallow everything up to the
+/// line ending, so brackets, quotes, and `;` are all fair game). Newlines are
+/// impossible in comment text by construction, and `\r` is excluded because
+/// the parser treats a trailing `\r` as part of a CRLF line ending.
+fn arb_comment() -> impl Strategy<Value = String> {
+	"[ -~]{0,16}"
+}
+
 fn arb_sexp() -> impl Strategy<Value = SExp> {
 	let leaf = prop_oneof![
 		arb_bare_atom().prop_map(SExp::Atom),
 		arb_string_atom().prop_map(SExp::Atom),
+		arb_comment().prop_map(SExp::Comment),
 		arb_style().prop_map(SExp::Null),
 	];
 	leaf.prop_recursive(5, 32, 6, |inner| {
@@ -55,20 +72,36 @@ fn arb_sexp() -> impl Strategy<Value = SExp> {
 	})
 }
 
+fn arb_printer_config() -> impl Strategy<Value = PrinterConfig> {
+	(
+		1usize..8,
+		1usize..120,
+		proptest::option::of(arb_style()),
+		any::<bool>(),
+	)
+		.prop_map(
+			|(indent_width, margin_width, bookends, pair_labels)| PrinterConfig {
+				indent_width,
+				margin_width,
+				bookends,
+				pair_labels,
+			},
+		)
+}
+
 proptest! {
 	#[test]
 	fn roundtrip(sexp in arb_sexp()) {
 		let config = PrinterConfig::default();
 		let printed = sexp_to_string(&sexp, &config);
-		let reparsed = parse_str(&printed).unwrap();
+		let reparsed = parse_str_with(&printed, REPARSE).unwrap();
 		prop_assert_eq!(reparsed, vec![sexp]);
 	}
 
 	#[test]
-	fn idempotent(sexp in arb_sexp(), indent in 1usize..8, margin in 1usize..120) {
-		let config = PrinterConfig { indent_width: indent, margin_width: margin };
+	fn idempotent(sexp in arb_sexp(), config in arb_printer_config()) {
 		let once = sexp_to_string(&sexp, &config);
-		let reparsed = parse_str(&once).unwrap();
+		let reparsed = parse_str_with(&once, REPARSE).unwrap();
 		prop_assert_eq!(reparsed.len(), 1);
 		let twice = sexp_to_string(&reparsed[0], &config);
 		prop_assert_eq!(once, twice);
