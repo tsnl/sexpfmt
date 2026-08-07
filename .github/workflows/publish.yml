@@ -25,6 +25,7 @@ on:
 
 # Grant permissions for GITHUB_TOKEN
 permissions:
+  actions: write
   contents: write
   pull-requests: read
 
@@ -70,6 +71,20 @@ jobs:
               --verify-tag \
               --generate-notes
           fi
+
+      # Releases created with GITHUB_TOKEN do not fire `on: release` workflows
+      # (GitHub suppresses recursive triggers), so dispatch the binary build
+      # explicitly; workflow_dispatch is exempt from that suppression.
+      - name: Build release binaries
+        if: ${{ github.event.inputs.dry_run == 'false' && steps.publish.outputs.tag_name != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.publish.outputs.tag_name }}"
+          gh workflow run release-binaries.yml \
+            --repo "${{ github.repository }}" \
+            --ref "$TAG" \
+            -f tag="$TAG"
 
       - name: Output summary
         run: |
